@@ -1,0 +1,1680 @@
+﻿<title>개인형 이동수단(PM) 법안 스탠스 트래커</title>
+<style>
+:root{
+  --bg:#f7f5f1;
+  --surface:#ffffff;
+  --surface-2:#f0ede6;
+  --ink:#211f1c;
+  --ink-dim:#5b564d;
+  --line:#e2ddd2;
+  --accent:#2c5f6f;
+  --accent-soft:#e4eef0;
+  --dem:#1a54a3;
+  --dem-bg:#e8f0fb;
+  --ppp:#c23b3b;
+  --ppp-bg:#fbe9e8;
+  --jp:#c98a12;
+  --jp-bg:#fbf1de;
+  --stance-support:#2f7a4f;
+  --stance-support-bg:#e5f3ea;
+  --stance-caution:#a86a11;
+  --stance-caution-bg:#faf0dd;
+  --stance-mixed:#6b5b9a;
+  --stance-mixed-bg:#efeaf7;
+  --stance-inquiry:#5b6472;
+  --stance-inquiry-bg:#eaecef;
+  --mono: "SF Mono", "Cascadia Code", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#191714;
+    --surface:#221f1b;
+    --surface-2:#2a2621;
+    --ink:#ede8df;
+    --ink-dim:#a89e8f;
+    --line:#3a352d;
+    --accent:#7fb8c9;
+    --accent-soft:#233a3f;
+    --dem:#7aa8e0;
+    --dem-bg:#1c2c40;
+    --ppp:#e08a8a;
+    --ppp-bg:#3a2222;
+    --jp:#e0b35a;
+    --jp-bg:#3a2f1a;
+    --stance-support:#7fcf9f;
+    --stance-support-bg:#1e3327;
+    --stance-caution:#e0b35a;
+    --stance-caution-bg:#3a2f1a;
+    --stance-mixed:#bda8e8;
+    --stance-mixed-bg:#2c2640;
+    --stance-inquiry:#b7c0cc;
+    --stance-inquiry-bg:#2a2d32;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#191714; --surface:#221f1b; --surface-2:#2a2621; --ink:#ede8df; --ink-dim:#a89e8f; --line:#3a352d;
+  --accent:#7fb8c9; --accent-soft:#233a3f;
+  --dem:#7aa8e0; --dem-bg:#1c2c40; --ppp:#e08a8a; --ppp-bg:#3a2222; --jp:#e0b35a; --jp-bg:#3a2f1a;
+  --stance-support:#7fcf9f; --stance-support-bg:#1e3327; --stance-caution:#e0b35a; --stance-caution-bg:#3a2f1a;
+  --stance-mixed:#bda8e8; --stance-mixed-bg:#2c2640; --stance-inquiry:#b7c0cc; --stance-inquiry-bg:#2a2d32;
+}
+:root[data-theme="light"]{
+  --bg:#f7f5f1; --surface:#ffffff; --surface-2:#f0ede6; --ink:#211f1c; --ink-dim:#5b564d; --line:#e2ddd2;
+  --accent:#2c5f6f; --accent-soft:#e4eef0;
+  --dem:#1a54a3; --dem-bg:#e8f0fb; --ppp:#c23b3b; --ppp-bg:#fbe9e8; --jp:#c98a12; --jp-bg:#fbf1de;
+  --stance-support:#2f7a4f; --stance-support-bg:#e5f3ea; --stance-caution:#a86a11; --stance-caution-bg:#faf0dd;
+  --stance-mixed:#6b5b9a; --stance-mixed-bg:#efeaf7; --stance-inquiry:#5b6472; --stance-inquiry-bg:#eaecef;
+}
+
+*{box-sizing:border-box;}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Segoe UI",sans-serif;
+  line-height:1.6;
+  padding:0;
+  margin:0;
+}
+.wrap{max-width:920px;margin:0 auto;padding:40px 24px 100px;}
+
+header.top{margin-bottom:36px;}
+.eyebrow{
+  font-family:var(--mono);
+  font-size:12px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin:0 0 10px;
+}
+h1{
+  font-size:28px;
+  font-weight:700;
+  margin:0 0 8px;
+  text-wrap:balance;
+  letter-spacing:-.01em;
+}
+.subtitle{color:var(--ink-dim);font-size:15px;max-width:65ch;margin:0 0 20px;}
+
+.scope-note{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:16px 18px;
+  font-size:13.5px;
+  color:var(--ink-dim);
+}
+.scope-note b{color:var(--ink);}
+.changelog{margin:8px 0 0;padding-left:18px;}
+.changelog li{margin-bottom:4px;}
+
+.summary-grid{
+  display:grid;
+  grid-template-columns:repeat(6,1fr);
+  gap:1px;
+  background:var(--line);
+  border:1px solid var(--line);
+  border-radius:10px;
+  overflow:hidden;
+  margin:28px 0 40px;
+}
+.summary-cell{
+  background:var(--surface);
+  padding:14px 10px;
+  text-align:center;
+}
+.summary-cell .num{
+  font-family:var(--mono);
+  font-variant-numeric:tabular-nums;
+  font-size:22px;
+  font-weight:600;
+  display:block;
+}
+.summary-cell .lbl{font-size:10.5px;color:var(--ink-dim);margin-top:4px;display:block;line-height:1.3;}
+.summary-cell.pending .num{color:var(--ink-dim);}
+
+section.cat{margin-bottom:44px;}
+.cat-head{
+  display:flex;
+  align-items:baseline;
+  gap:10px;
+  border-bottom:1px solid var(--line);
+  padding-bottom:10px;
+  margin-bottom:18px;
+}
+.cat-num{
+  font-family:var(--mono);
+  color:var(--accent);
+  font-size:13px;
+  font-weight:600;
+}
+.cat-title{font-size:18px;font-weight:700;margin:0;}
+.cat-desc{font-size:13px;color:var(--ink-dim);margin-left:auto;text-align:right;}
+
+.pending-box{
+  border:1px dashed var(--line);
+  border-radius:10px;
+  padding:24px;
+  text-align:center;
+  color:var(--ink-dim);
+  font-size:13.5px;
+  background:var(--surface-2);
+}
+.update-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  margin-top:14px;
+  padding:8px 16px;
+  border-radius:7px;
+  border:1px solid var(--line);
+  background:var(--surface);
+  color:var(--ink-dim);
+  font-size:13px;
+  font-family:inherit;
+  cursor:not-allowed;
+}
+.update-btn svg{width:14px;height:14px;}
+
+.member-card{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:18px 20px;
+  margin-bottom:12px;
+}
+.member-top{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px 10px;
+  margin-bottom:10px;
+}
+.member-name{font-size:16px;font-weight:700;}
+.chip{
+  font-size:11.5px;
+  padding:3px 9px;
+  border-radius:999px;
+  font-weight:600;
+  white-space:nowrap;
+}
+.chip.dem{background:var(--dem-bg);color:var(--dem);}
+.chip.ppp{background:var(--ppp-bg);color:var(--ppp);}
+.chip.jp{background:var(--jp-bg);color:var(--jp);}
+.chip.meta{background:var(--surface-2);color:var(--ink-dim);font-weight:500;}
+.stance-tag{
+  font-size:11.5px;
+  padding:3px 9px;
+  border-radius:6px;
+  font-weight:700;
+  margin-left:auto;
+}
+.stance-tag.support{background:var(--stance-support-bg);color:var(--stance-support);}
+.stance-tag.caution{background:var(--stance-caution-bg);color:var(--stance-caution);}
+.stance-tag.mixed{background:var(--stance-mixed-bg);color:var(--stance-mixed);}
+.stance-tag.inquiry{background:var(--stance-inquiry-bg);color:var(--stance-inquiry);}
+
+.stance-text{font-size:14px;margin:0 0 10px;}
+.stance-text b{font-weight:700;}
+
+details.quotes{margin-top:8px;}
+details.quotes summary{
+  cursor:pointer;
+  font-size:12.5px;
+  color:var(--accent);
+  font-weight:600;
+  list-style:none;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+}
+details.quotes summary::-webkit-details-marker{display:none;}
+details.quotes summary::before{content:"▸";font-size:10px;transition:transform .15s;}
+details.quotes[open] summary::before{transform:rotate(90deg);}
+.quote-block{
+  margin-top:10px;
+  padding-left:14px;
+  border-left:2px solid var(--line);
+}
+.quote-item{margin-bottom:10px;font-size:13px;color:var(--ink-dim);}
+.quote-item .qdate{
+  font-family:var(--mono);
+  font-size:11px;
+  color:var(--accent);
+  display:block;
+  margin-bottom:2px;
+}
+.quote-item q{font-style:normal;}
+
+.compact-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:8px;
+}
+.compact-card{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:10px 12px;
+  font-size:12.5px;
+}
+.compact-card .cname{font-weight:700;font-size:13px;display:block;margin-bottom:3px;}
+.compact-card .cmeta{color:var(--ink-dim);}
+
+.timeline{border-left:2px solid var(--line);margin-left:6px;padding-left:20px;}
+.tl-item{position:relative;padding-bottom:22px;}
+.tl-item:last-child{padding-bottom:0;}
+.tl-item::before{
+  content:"";
+  position:absolute;
+  left:-25px;
+  top:4px;
+  width:9px;height:9px;
+  border-radius:50%;
+  background:var(--accent);
+  border:2px solid var(--bg);
+}
+.tl-date{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:600;}
+.tl-speaker{font-weight:700;font-size:13.5px;margin:2px 0 4px;}
+.tl-role{font-size:11.5px;color:var(--ink-dim);font-weight:500;}
+.tl-text{font-size:13.5px;margin:0;}
+
+.note-inline{font-size:12px;color:var(--ink-dim);background:var(--surface-2);border-radius:6px;padding:8px 12px;margin:10px 0;}
+
+@media (max-width:640px){
+  .summary-grid{grid-template-columns:repeat(3,1fr);}
+  .compact-grid{grid-template-columns:1fr 1fr;}
+  .cat-desc{margin-left:0;text-align:left;}
+  .cat-head{flex-direction:column;align-items:flex-start;gap:2px;}
+}
+
+.view-tabs{display:flex;gap:8px;margin-bottom:28px;border-bottom:1px solid var(--line);}
+.view-tab{
+  font-family:inherit;
+  font-size:14px;
+  font-weight:600;
+  color:var(--ink-dim);
+  background:none;
+  border:none;
+  border-bottom:2px solid transparent;
+  padding:10px 4px 12px;
+  margin-bottom:-1px;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.view-tab:hover{color:var(--ink);}
+.view-tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+.view-tab-count{
+  font-family:var(--mono);
+  font-size:10.5px;
+  background:var(--surface-2);
+  color:var(--ink-dim);
+  border-radius:999px;
+  padding:1px 7px;
+}
+.view-tab.active .view-tab-count{background:var(--accent-soft);color:var(--accent);}
+
+.bill-section-h{font-size:16px;font-weight:700;margin:36px 0 6px;padding-top:20px;border-top:1px solid var(--line);display:flex;align-items:center;gap:8px;}
+.bill-section-note{font-size:12.5px;color:var(--ink-dim);margin:0 0 16px;}
+
+.bill-card-list{display:flex;flex-direction:column;gap:12px;}
+.bill-card2{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:16px 20px;
+}
+.bc-top{display:flex;align-items:flex-start;flex-wrap:wrap;gap:8px 10px;margin-bottom:8px;}
+.bc-name{font-size:14.5px;font-weight:700;flex:1;min-width:200px;color:var(--ink);}
+.bc-meta{font-size:12.5px;color:var(--ink-dim);margin-bottom:10px;}
+.bc-meta b{color:var(--ink);font-weight:600;}
+.bc-summary{font-size:13.5px;margin:0 0 8px;}
+.bc-stage-detail{font-size:12px;color:var(--ink-dim);margin:0 0 10px;padding-left:10px;border-left:2px solid var(--line);}
+.bc-link{
+  font-size:12.5px;
+  color:var(--accent);
+  font-weight:600;
+  text-decoration:none;
+}
+.bc-link:hover{text-decoration:underline;}
+.st{
+  display:inline-block;
+  font-size:10.5px;
+  font-weight:700;
+  padding:3px 9px;
+  border-radius:6px;
+  white-space:nowrap;
+}
+.st.pending{background:var(--stance-inquiry-bg);color:var(--stance-inquiry);}
+.st.merged{background:var(--stance-mixed-bg);color:var(--stance-mixed);}
+.st.withdrawn{background:var(--stance-caution-bg);color:var(--stance-caution);}
+.st.advanced{background:var(--stance-mixed-bg);color:var(--stance-mixed);}
+.st.support{background:var(--stance-support-bg);color:var(--stance-support);}
+.ind{
+  display:inline-block;
+  font-size:10px;
+  font-weight:600;
+  padding:1px 6px;
+  border-radius:5px;
+  background:var(--surface-2);
+  color:var(--ink-dim);
+  margin-left:6px;
+}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">국토교통위원회 · 회의록 기반 분석</p>
+  <h1>개인형 이동수단(PM) 법안 스탠스 트래커</h1>
+  <p class="subtitle">국회 열린국회정보 Open API(회의록·국회의원 인적사항)로 수집한 21~22대 국토위·법사위 회의록 원문을 바탕으로, 개인형 이동수단(PM/전동킥보드) 관련 법안에 대한 의원별 발언과 스탠스를 정리했습니다.</p>
+  <div class="scope-note">
+    <b>기준일: 2026-07-31</b>
+    <ul class="changelog">
+      <li>스탠스 분류 기준을 PM업계 우호도 중심으로 재정의 (전용면허·나이인증·산업활성화·과잉규제 비판 = 우호 / 기존면허·관리·안전강화 = 비우호)</li>
+      <li>각 카테고리 내 정렬을 우호도+발언량 가중치 기준으로 재배치</li>
+      <li>기관·실무진 카테고리에 부산광역시 추가, 6·7번 카테고리 순서 교체</li>
+      <li>"관련 법 현황" 탭 신설 — PM 전담 제정법률안 14건(위원회 대안 포함) + 도로교통법·자전거법·자동차관리법 개정안 33건, 법안마다 핵심 내용 요약 추가</li>
+      <li>김영배 의원 카드에 본인이 대표발의한 도로교통법 개정안 반영</li>
+    </ul>
+  </div>
+</header>
+
+<div class="view-tabs" role="tablist">
+  <button class="view-tab active" data-view="members" onclick="pmSwitchView('members')">국회의원·기관 현황</button>
+  <button class="view-tab" data-view="bills" onclick="pmSwitchView('bills')">관련 법 현황 <span class="view-tab-count">47</span></button>
+</div>
+
+<div id="view-members">
+
+<div class="summary-grid">
+  <div class="summary-cell pending"><span class="num">–</span><span class="lbl">① 교통소위·스탠스 O</span></div>
+  <div class="summary-cell pending"><span class="num">–</span><span class="lbl">② 교통소위·스탠스 X</span></div>
+  <div class="summary-cell"><span class="num">18</span><span class="lbl">③ 국토위·스탠스 O</span></div>
+  <div class="summary-cell"><span class="num">12</span><span class="lbl">④ 국토위·스탠스 X</span></div>
+  <div class="summary-cell"><span class="num">32</span><span class="lbl">⑤ 타위원회·스탠스 O</span></div>
+  <div class="summary-cell"><span class="num">13</span><span class="lbl">⑥ 기타(재선실패 등)</span></div>
+  <div class="summary-cell"><span class="num">6</span><span class="lbl">⑦ 비의원 기관</span></div>
+</div>
+<style>.summary-grid{grid-template-columns:repeat(7,1fr);}@media (max-width:640px){.summary-grid{grid-template-columns:repeat(3,1fr);}}</style>
+
+<!-- CATEGORY 1 -->
+<section class="cat">
+  <div class="cat-head">
+    <span class="cat-num">01</span>
+    <h2 class="cat-title">현재 국토위 + 교통소위 소속 · PM 스탠스 있음</h2>
+    <span class="cat-desc">교통소위 명단 대기</span>
+  </div>
+  <div class="pending-box">
+    소위원회 단위 소속 정보가 Open API에 없어 비어 있습니다.<br>
+    소위 명단이 확보되면 <b>③번(국토위·스탠스 O)</b> 중 교통소위 소속인 사람이 자동으로 여기로 이동합니다.
+    <div><button class="update-btn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>교통소위 명단 업데이트</button></div>
+  </div>
+</section>
+
+<!-- CATEGORY 2 -->
+<section class="cat">
+  <div class="cat-head">
+    <span class="cat-num">02</span>
+    <h2 class="cat-title">현재 국토위 + 교통소위 소속 · PM 스탠스 없음</h2>
+    <span class="cat-desc">교통소위 명단 대기</span>
+  </div>
+  <div class="pending-box">
+    소위 명단이 확보되면 <b>④번(국토위·스탠스 X)</b> 중 교통소위 소속인 사람이 자동으로 여기로 이동합니다.
+    <div><button class="update-btn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>교통소위 명단 업데이트</button></div>
+  </div>
+</section>
+
+<!-- CATEGORY 3 -->
+<section class="cat">
+  <div class="cat-head">
+    <span class="cat-num">03</span>
+    <h2 class="cat-title">현재 국토위 소속 · PM 스탠스 있음</h2>
+    <span class="cat-desc">18명</span>
+  </div>
+  <p class="note-inline">발언 기록뿐 아니라 <b>법안 발의(대표+공동)</b>도 스탠스로 집계했습니다 — 발의 자체가 찬성/입법추진 의사표시이기 때문입니다. 공동발의자 명단까지 확인해 김미애·김남근·장종태·염태영·안태준·엄태영 6명을 새로 찾았습니다 (원래 ④번에 있었습니다).</p>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">정동만</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">부산 기장군</span>
+      <span class="chip meta">재선</span>
+      <span class="stance-tag support">PM 전용면허·산업 인프라 요구</span>
+    </div>
+    <p class="stance-text">2020~2024년 4개 위원회에 걸쳐 이 사안을 가장 폭넓게 다룬 의원입니다. 2020년 국토위 국정감사(부산 현장)에서 해운대·광안리·송도 관광지에 퍼스널모빌리티 전용도로·인프라 구축을 직접 제안해 국무조정실장의 "적극 공감" 답변을 이끌어냈고, 2024년 행안위 국정감사에서는 PM 전용면허 신설을 요구하며 무면허 사고의 80%가 20세 미만이라는 통계, 경기남부청 음주사고가 전국 10건 중 4건(253건 중 98건)을 차지한다는 수치, 서울시 견인업체가 정상 주차된 PM을 부정 이동시켜 3년간 약 80억원을 챙긴 CCTV 증거를 각각 제시했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 6건 · 2020~2024년 · 4개 위원회</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2020-10-12 · 국토위 국정감사</span><q>올해 도로교통법이랑 또 자전거 이용 활성화에 관한 법률이 개정돼서 12월 10일부터 개인형 이동수단 일명 전동킥보드라고 하는 것이 이제 자전거도로에서도 다니게 되고 그다음에 13세 이상 청소년도 면허 없이 탈 수 있게 돼 있는데 혹시 그것의 안전에 대해서는…</q></div>
+        <div class="quote-item"><span class="qdate">2020-10-13 · 국토위 국정감사(부산)</span><q>해운대·광안리·송도 지역 등 관광지역에 퍼스널 모빌리티를 도입해서 관광시설 간의 이동 대책을 준비해야 될 것 같습니다. 안전하고 자유롭게 퍼스널 모빌리티를 탈 수 있는 환경을 만들어서 교통 수요를 분산시켜야 됩니다.</q></div>
+        <div class="quote-item"><span class="qdate">2021-11-11 · 예산결산특별위원회</span><q>높은 인구밀도와 교통량 증가로 인한 극심한 교통체증과 주차난의 해소를 위해서 지금 퍼스널 모빌리티를 적극 활용하고 있습니다. (…) 세계적 추세에 맞춰서 국가 차원에서 관광환경 조성을 위해 인프라 투자를 해야 합니다.</q> — 국무조정실장 구윤철: "적극적으로 공감을 하고 있습니다."</div>
+        <div class="quote-item"><span class="qdate">2024-10-11 · 행안위 국정감사</span><q>연간 교통사고 중 무면허 사고가 절반을 차지하는 차종이 개인형 이동장치, PM 사고입니다. (…) 무면허 교통사고 중의 약 80%가 20세 미만 청소년이라는 것입니다. (…) PM 전용 면허 신설해서 청소년 보호해야 되는 것 아닙니까?</q></div>
+        <div class="quote-item"><span class="qdate">2024-10-14 · 행안위 국정감사</span><q>남부청 PM 음주운전 사고가 전국 10건 중 4건을 차지합니다. 총 253건 중 98건입니다. 이게 서울의 2배가 넘습니다. (…) 이것 단속 강화해야 되는 것 아닙니까?</q></div>
+        <div class="quote-item"><span class="qdate">2024-10-15 · 행안위 국정감사(서울시)</span><q>견인업체 관계자로 추정되는 인물, 정상 주차된 PM 주차의 위치를 임의 이동시킨 뒤에 견인하는 모습이 CCTV에 찍혔는데요. (…) 지난 3년간 견인 업체가 PM 견인해서 챙긴 총 견인비가 한 80억 정도 됩니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">윤종오</span>
+      <span class="chip jp">진보당</span>
+      <span class="chip meta">울산 북구</span>
+      <span class="chip meta">재선</span>
+      <span class="stance-tag support">자격시험 등 추가규제 반대</span>
+    </div>
+    <p class="stance-text">소위 조정안(속도 하향+주차시설 단계적 확충)에는 적극 동의하면서도, 여기에 자격시험까지 추가하는 것은 "기구·인력·예산만 드는 무리한 규제"라며 반대했고, 손명수 위원이 정리한 안대로 가면 좋겠다고 명시적으로 지지했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-12-04 · 국토위 교통소위</span><q>거의 정리를 잘해 주셔 가지고, 등록하고 또 이렇게 주차시설 단계적으로 확충하고 (…) 저희 동네도 가면 인도에 아무 데나 나자빠져 놓고 길바닥에 그냥 도로에도 막 이렇게 뒹굴고 있고 이래서 그런 부분에 대한 것을 좀 정리하면 될 것 같고요. 일단 속도가 줄면서 나머지 더 규제하는 것은 문제가 있다고 봅니다. (…) 신분만 정확하게 확인되면 그냥 운행할 수 있게 해야 되지 여기 자격 시험이 있고 하면 그 기구 만들어야 되고 인력 들고 돈 들고 실제적으로 효능은 없고 이것은 또 너무 무리한 규제라고 생각합니다. 그래서 손명수 위원 정리하신 대로 정리하면 좋을 것 같습니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김은혜</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">경기 성남시분당구을</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">발의자</span>
+      <span class="stance-tag mixed">활성화 프레이밍, 내용은 규제 포함</span>
+    </div>
+    <p class="stance-text">16인과 함께 "안전 및 이용 활성화"를 법안명에 내세운 대표발의자입니다. 다만 실제 법안 내용에는 소유자·대여사업자 책임보험 의무화, 불법개조 제재, 운전자격확인시스템 구축 등 상당한 규제 조항도 포함돼 있어, 활성화 프레이밍과 실제 내용 사이에 온도차가 있습니다.</p>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">전용기</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 화성시정</span>
+      <span class="chip meta">재선</span>
+      <span class="stance-tag inquiry">부처 간 관할 확인</span>
+    </div>
+    <p class="stance-text">전동킥보드·자전거 사업이 행안부(경찰청) 소관과 겹치는 지점을 짚으며, 관계기관 협의가 어디까지 진행됐는지와 국토부의 향후 계획을 확인하는 절차적 질의를 했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-11-18 · 국토위 전체회의</span><q>국토부에서 모빌리티사업이 결국에는 주력 사업 중의 하나입니다. 그런데 자전거나 전동킥보드의 사고를 위원님들께서 많이 보셨을 겁니다. 그런데 이게 행안부 사업이다 보니까 규제하려면 관계기관 협의부터 필요한 아주 중차대한 사안입니다. 그렇기 때문에 관계기관 협의 내용은 어디까지 되어 있는지 그리고 국토부에서 자전거나 전동킥보드 관련된 사업들을 가지고 올 앞으로의 계획이 있는지 등이 좀 궁금합니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">강득구</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 안양시만안구</span>
+      <span class="chip meta">재선</span>
+      <span class="stance-tag inquiry">이용연령 하향 확인</span>
+    </div>
+    <p class="stance-text">2020년 교육위 국정감사에서 이용연령이 만 16세에서 13세로 낮아지는 시행(12월 10일)을 앞두고 교육부가 대응책을 마련했는지 확인했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 교육위원회 국정감사</summary><div class="quote-block">
+      <div class="quote-item"><q>장관님, 부탁이 하나 있습니다. <b>전동킥보드가 12월 10일부터 법이 개정돼 가지고 만 16세에서 만 13세 이상이 운행할 수 있게 됩니다.</b> 아시지요?</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">복기왕</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">충남 아산시갑</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">발의자</span>
+      <span class="stance-tag caution">관리·등록 체계 설계 주도</span>
+    </div>
+    <p class="stance-text">"개인형 이동수단의 안전 및 관리에 관한 법률안"(권영진 의원과 공동, 2213026) 대표발의자이자 교통법안심사소위원장입니다. 법안명부터 "관리"에 방점을 뒀고, 이 법안이 실제로 최종 위원회 대안(DD20688)의 뼈대가 됐습니다. 2025-12-04~2026-04-29 사이 12건 병합 심사를 직접 진행하며 정부·업계 조율을 주도했고, 2025-11-26 회의에서는 정부 조율이 덜 됐다는 이유로 12건 전체 심사를 한 차례 연기시키기도 했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 3건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-11-26 · 교통소위원장</span><q>의사일정 제4항부터 심사할 차례입니다. 개인형 이동수단의 안전 및 관리에 관한 법률안, 이 부분에 대해서는 아직 정부와 그리고 여러 가지 의견들에 대해서 조율이 좀 덜 됐다라는 말씀을 들었습니다. (…) 다음 회차에서 우리가 심사하는 것으로 하고 다음 안건으로 넘어가면 어떻겠습니까?</q> — 정부 조율 미비를 이유로 12건 전체를 다음 회차로 연기. (참고: 이 날짜는 Open API의 안건명 검색에는 걸리지 않아 별도로 찾아냈습니다 — 안건 목록에는 있지만 API 응답에서 누락되는 사례가 있는 것으로 보입니다.)</div>
+        <div class="quote-item"><span class="qdate">2025-12-04 · 교통소위원장</span><q>이게 작은 부분까지 하면 굉장히 가짓수가 많고… 실제 우리가 검토해야 되는 부분을 보면 대여용 PM을 중심으로 해서 아까 차관께서 말씀하신 것처럼 속도 하향을 20㎞/h로 하는 것에 대해 동의를 하는지 이 부분에 대한 확인과 그다음에 운전자격 확인, 면허가 필요하냐 아니냐, 사실 이 부분이 가장 큰 쟁점이 될 것 같습니다.</q></div>
+        <div class="quote-item"><span class="qdate">2025-12-15 · 교통소위원장</span><q>의사일정 제1항 개인형 이동수단의 안전 및 이용 활성화에 관한 법률안 공청회를 상정합니다. (…) 총 12건의 법률안을 심사함에 있어 관계 업계 및 전문가, 수요자 등으로부터 의견을 청취하기 위해 개최되었습니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김종양</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">경남 창원시의창구</span>
+      <span class="chip meta">초선</span>
+      <span class="stance-tag caution">"킥라니" 조어 · 강경 규제론</span>
+    </div>
+    <p class="stance-text">2024년 행안위 국정감사 3개 회의에 걸쳐 "킥라니"라는 표현을 처음 쓰며 유럽처럼 PM 운행에 "제동을 걸 필요"가 있다고 주장했고, 해외에서는 대여업체를 통한 운행 자체를 금지한 사례가 있다고 근거를 들었습니다. 대여업체의 면허 확인 소홀, 무단방치로 인한 도시미관 훼손, 탄소배출 문제까지 종합적으로 제기한 가장 강경한 규제론자입니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 3건 · 출처: 행정안전위원회 국정감사</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2024-10-15</span><q>일반적으로 전동킥보드 등을 비롯해 가지고 개인이 이동수단으로 활용하고 있는 PM 있잖아요. (…) 제가 봤을 때 PM의 가장 큰 문제는 교통사고도 문제가 되고 그다음에 도로에 무분별하게 방치했기 때문에 도보하시는 분들의 제2차 안전 문제라든지 도시 미관 그리고 심지어는 이게 또 탄소 배출이 상대적으로 많답니다. 그런 등등 여러 가지 이유로 이 부분에 대해서 조금 제동을 걸 필요가 있지 않나…</q></div>
+        <div class="quote-item"><span class="qdate">2024-10-25</span><q>킥라니, 청장님 킥라니 들어 보셨지요? (…) 킥보드하고 고라니를 더해 가지고 갑자기 불쑥불쑥 튀어나오는 전동 킥보드 이야기인데 이건 교통사고 유발의 가장 큰 요인 중의 하나가 되고 (…) 선진국 같은 경우에는 개인이 소유하지 않는 대여 업체는, 대여를 통한 운행은 못 하도록 되어 있고…</q></div>
+        <div class="quote-item"><span class="qdate">2024-10-22</span><q>교육청에서는 면허증이 없는 16세 이하는 이것을 타지 못하게 하는 게 아니라 오히려 교통안전교육을 하고 있는 것 같더라고요, 못 타게 해야 되는데. (…) 그 교육이 우선이 아니고 면허를 갖지 못한 사람은 탈 수 없으니까 원천적으로 타지 못하도록 하는 교육이 더 중요하지 않느냐…</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">윤종군</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 안성시</span>
+      <span class="chip meta">초선</span>
+      <span class="stance-tag caution">업계 주장에 반박</span>
+    </div>
+    <p class="stance-text">업계 관계자가 "규제 중심 법안이 시행되면 업계가 고사하고 PM 자체가 사라질 수밖에 없다"고 발언한 데 대해, 그동안 업계가 안전을 위해 실제로 어떤 노력을 해왔는지 반문하며 소비자 보호를 우선해야 한다고 반박했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 2건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-12-15 · 국토위 교통소위 공청회</span><q>"규제 중심의 법안이 시행되면 업계 자체가 고사하고 일자리가 사라지고 PM 자체가 사라질 수밖에 없다" 이렇게 얘기하셨는데 업계 입장에서 발생할 우려를 얘기할 수는 있겠지만 사고를 예방하고 방지하기 위해서 업계가 그동안 해 온 노력이 뭔지 이것 좀 얘기를 해 주시면 좋을 것 같고요.</q></div>
+        <div class="quote-item"><span class="qdate">2025-12-15</span><q>그러면 예산 말고 업계가 다른 어떤 대책을 가지고 있는지, 다른 대안이 뭔지 이 두 가지 좀 여쭤보겠습니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김정재</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">경북 포항시북구</span>
+      <span class="chip meta">3선</span>
+      <span class="stance-tag caution">통계 기반 규제 공백 비판</span>
+    </div>
+    <p class="stance-text">중학교 교사의 민원을 계기로 직접 통계를 조사해, 10대 개인형 이동장치 사망사고가 2017년 12건에서 2021년 약 550건으로, 무면허 적발이 2021년 3,400건에서 2022년 7,500건(8월 기준)으로 급증했다는 수치를 제시했습니다. 담배·주류 판매업자는 청소년에게 팔면 처벌받는데 PM 대여업체는 무면허 확인 의무조차 없다는 공백을 지적했고, 국토부의 민관협의체 대응도 "업체 자율에 맡기는 면피용 대책"이라고 비판했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 2건 · 출처: 국정감사</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2022-10-21 · 국토교통위 국정감사</span><q>10대 사망이 보면 2017년에 12건이던 것이 2021년에는 약 550건 정도로 엄청나게 많이 늘었습니다. (…) 담배, 주류의 경우에는 청소년에게 팔 경우에는 판매자도 2년 이하 징역 또는 2000만 원 이하의 벌금을 내게 돼 있습니다. 처벌 규정이 없다 보니까 이런 문제가 생기는 거고요. (…) 단속에 걸려도 모든 책임은 이용자에게 있다라는 안내도 해 주고 있습니다.</q></div>
+        <div class="quote-item"><span class="qdate">2022-10-21 · 국토교통위 국정감사</span><q>국토부가 지난 7월에 PM이라고 개인 이동장치 민관협의체를 구성해서 보도자료를 냈습니다. 내용이 되게 부실합니다. (…) 이것도 업체의 자율입니다, 이용을 하든 말든. 그래서 전혀 실제로는 실효성이 없고 면피용 보도자료가 아닌가…</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">유상범</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">강원 홍천횡성영월평창</span>
+      <span class="chip meta">재선</span>
+      <span class="stance-tag caution">안전 우려 · 통계기반 검토 요구</span>
+    </div>
+    <p class="stance-text">청소년 이용 집중과 사망사고 빈발, 보호장구 미착용 문제를 지적하며 법무부·경찰청에 사고 통계·운전자 연령 분석과 필요시 공청회까지 포함한 입법적 검토를 주문했습니다. 자녀를 둔 학부모들이 느끼는 불안감을 근거로 들었습니다.</p>
+    <details class="quotes"><summary>발언 원문 2건 · 출처: 법제사법위원회 법안심사소위</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2022-11-28</span><q>전동킥보드도 사실은 지금 굉장히 젊은 학생들 중심으로 움직이면서 안전에 위협이 많이 되고 있는 부분도 있고 <b>본인들도 그로 인해서 사실은 사망 사고가 다수 빈발하고 있거든요</b>, 실제로.</q></div>
+      <div class="quote-item"><span class="qdate">2022-11-28</span><q>이 부분은 법무부가 경찰청이랑 한번 해서 <b>실제 그로 인한 사고의 빈발 건수 그다음에 운전자의 나이 이런 걸 종합적으로 분석해서 필요하면 공청회를 여는 정도까지 생각을 해 봐야 될 것 같아요.</b> 특히 아이들을 가지고 있는 부모들이 전동킥보드에 대해서 느끼는 위험성이 굉장히 높아요. 그리고 학생들이 아예 헬멧이나 이런 보호 장비 없이 대부분 운행을 하면서 여러 가지 사고도 많고, 어느 정도는 이제 우리가 그 부분에 대한 <b>입법적 검토를 해야 될 것 같다</b>는 생각이 들거든요. 그래서 그것은 준비를 해 주시라는 당부를 드리겠습니다.</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김남근</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">서울 성북구을</span>
+      <span class="chip meta">초선</span>
+      <span class="chip meta">공동발의</span>
+      <span class="stance-tag caution">업계 가맹 관행 문제제기</span>
+    </div>
+    <p class="stance-text">복기왕·권영진 의원안(2213026)과 정일영 의원안(2213974) 양쪽 모두에 공동발의자로 이름을 올렸습니다. 별도로 정무위 국정감사에서는 안전이 아닌 공정거래·가맹 규율 관점에서 업계를 문제 삼았습니다 — 지쿠(GCOO)·빔(Beam)은 가맹점으로 인정하면서 스윙(SWING)은 통제 요건이 없다며 부인하는 등, PM 대여업체마다 "가맹점" 인정 기준이 들쑥날쑥 자의적이라고 지적했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 정무위원회 국정감사</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2025-10-28</span><q>개인형 이동장치 요즘 많이 문제되고 있지요. 거기에 대해서도 지쿠(GCOO), 빔(beam) 이런 회사들은 가맹점이라고 그러는데 스윙(SWING)이라는 회사는 통제 요건이 없다고 그러면서 아니라고 그래요. <b>이러다 보니까 이게 들쑥날쑥해서 너무 자의적이다……</b></q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">황운하</span>
+      <span class="chip meta" style="background:#efeaf7;color:#6b5b9a;">조국혁신당</span>
+      <span class="chip meta">비례</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">발의자</span>
+      <span class="stance-tag caution">무면허 위험성 실증 · 단속 강화 요구</span>
+    </div>
+    <p class="stance-text">본인이 직접 PM 대여 앱으로 무면허 인증을 시도해 "인증체계 건너뛰기가 쉽다"는 걸 실증했고, 무면허 사고로 작년 사망자만 23명이라는 통계를 근거로 강도 높은 대책을 요구했습니다. 발의자이면서도 가장 실증적·규제강화 지향적인 태도를 보였습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건 · 출처: 국정감사</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-10-29 · 국토교통위 국정감사</span><q>퍼스널 모빌리티(Personal Mobility), 킥보드가 대표적인 것인데요. 킥보드 무면허 사고가 계속 늘어나고 작년에 사망자가 23명이나 이릅니다. (…) 제가 한번 PM 킥보드를 빌려 봤어요. 빌리러 가서 보니까 인증체계 건너뛰기가 쉽더라고요. 즉 아무나 무면허 운전하기가 쉽다, 10대 청소년들이 얼마든지 무면허할 수 있겠더라 이걸 제가 확인을 했습니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">정일영</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">인천 연수구을</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">발의자</span>
+      <span class="stance-tag caution">금지구역·단속 강화형 관리법 발의</span>
+    </div>
+    <p class="stance-text">"개인형 이동수단의 안전 및 관리에 관한 법률안"(2213974) 대표발의자로, 지자체의 킥보드 금지구역 지정 권한 신설과 무면허·미성년자 운전 단속 강화를 골자로 발의했습니다. 인천 송도 보행자 중상 사고를 발의 계기로 언급했고, 복기왕 소위원장과 PM 기본법 토론회를 공동 주최하는 등 대외활동도 병행했습니다(언론 보도 기준, 회의록 미확인).</p>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김미애</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">부산 해운대구을</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">공동발의</span>
+      <span class="stance-tag support">활성화형 법안 공동발의</span>
+    </div>
+    <p class="stance-text">김은혜 의원안(2212495, "안전 및 이용 활성화")의 공동발의자 16인 중 한 명입니다. 본인의 PM 관련 발언은 확인되지 않았습니다.</p>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">엄태영</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">충북 제천시단양군</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">공동발의</span>
+      <span class="stance-tag support">활성화형 법안 공동발의</span>
+    </div>
+    <p class="stance-text">김은혜 의원안(2212495, "안전 및 이용 활성화")의 공동발의자 16인 중 한 명입니다. 본인의 PM 관련 발언은 확인되지 않았습니다.</p>
+  </div>
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">염태영</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 수원시무</span>
+      <span class="chip meta">초선</span>
+      <span class="chip meta">공동발의</span>
+      <span class="stance-tag caution">관리형 법안 공동발의</span>
+    </div>
+    <p class="stance-text">복기왕·권영진 의원안(2213026)의 공동발의자입니다. PM 관련 직접 발언은 확인되지 않고, 그린리모델링·탄소중립 예산 확대를 요청한 인접의제 발언만 있습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 인접의제(탄소중립)</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2024-11-11 · 국토위 전체회의</span><q>탄소중립과 관련돼서 실제적으로 집행이 저조한 것들은 줄이더라도 또 꼭 필요한 국가적인 사업으로 나가야 될 것들은 그 수준을 맞춰 주는 것이 필요하다는 의견을 드립니다. (…) 그린리모델링 사업 또 기존건축물 탄소중립 지원사업, 수소도시 지원사업 이 세 가지 경우는 같이 좀 봐 주십사 하는 말씀을 드립니다.</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">안태준</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 광주시을</span>
+      <span class="chip meta">초선</span>
+      <span class="chip meta">공동발의</span>
+      <span class="stance-tag caution">관리형 법안 공동발의</span>
+    </div>
+    <p class="stance-text">복기왕·권영진 의원안(2213026)의 공동발의자입니다. PM 관련 직접 발언은 확인되지 않고, AI 미래모빌리티 예산의 차질 없는 집행을 당부한 인접의제 발언만 있습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 인접의제(미래모빌리티)</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2025-11-11 · 국토위 전체회의</span><q>국토부 소관 예산을 보니까 역대 최대 규모인 62.4조 원으로 편성을 했습니다. (…) AI 신기술 응용시스템 상용화를 위한 지원 사업 신규, AI 특화 시범도시 조성 사업계획 수립 및 AI 미래모빌리티 (…) 국민이 피부로 체감할 수 있는 가시적인 성과가 도출될 수 있도록 잘 집행·관리해 주시기 바랍니다.</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">장종태</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">대전 서구갑</span>
+      <span class="chip meta">초선</span>
+      <span class="chip meta">공동발의</span>
+      <span class="stance-tag caution">관리형 법안 공동발의</span>
+    </div>
+    <p class="stance-text">복기왕·권영진 의원안(2213026)의 공동발의자 20인 중 한 명입니다. 본인의 PM 관련 발언은 확인되지 않았습니다.</p>
+  </div>
+
+</section>
+
+<!-- CATEGORY 4 -->
+<section class="cat">
+  <div class="cat-head">
+    <span class="cat-num">04</span>
+    <h2 class="cat-title">현재 국토위 소속 · PM 스탠스 없음</h2>
+    <span class="cat-desc">12명 · 회의록 범위 내 발언 미확인</span>
+  </div>
+  <p class="note-inline">아래 27명은 국회의원 통합 API 기준 현재 국토교통위원회 소속이지만, 지금까지 조사한 회의록 범위(21~22대 개인형 이동수단 관련 안건 상정 회의) 안에서 PM 관련 발언이 확인되지 않았습니다. 아직 국토위에 배치되기 전 시점이거나, 해당 회의에 불참했을 수 있습니다.</p>
+  <div class="compact-grid">
+    <div class="compact-card"><span class="cname">강대식</span><span class="cmeta">국민의힘 · 대구 동구군위군을 · 재선</span></div>
+    <div class="compact-card"><span class="cname">모경종</span><span class="cmeta">더불어민주당 · 인천 서구병 · 초선</span></div>
+    <div class="compact-card"><span class="cname">문정복</span><span class="cmeta">더불어민주당 · 경기 시흥시갑 · 재선</span></div>
+    <div class="compact-card"><span class="cname">부승찬</span><span class="cmeta">더불어민주당 · 경기 용인시병 · 초선</span></div>
+    <div class="compact-card"><span class="cname">신성범</span><span class="cmeta">국민의힘 · 경남 산청함양거창합천 · 3선</span></div>
+    <div class="compact-card"><span class="cname">유의동</span><span class="cmeta">국민의힘 · 경기 평택시을 · 4선</span></div>
+    <div class="compact-card"><span class="cname">이용선</span><span class="cmeta">더불어민주당 · 서울 양천구을 · 재선</span></div>
+    <div class="compact-card"><span class="cname">장경태</span><span class="cmeta">더불어민주당 · 서울 동대문구을 · 재선</span></div>
+    <div class="compact-card"><span class="cname">정희용</span><span class="cmeta">국민의힘 · 경북 고령성주칠곡 · 재선</span></div>
+    <div class="compact-card"><span class="cname">조인철</span><span class="cmeta">더불어민주당 · 광주 서구갑 · 초선</span></div>
+    <div class="compact-card"><span class="cname">허영</span><span class="cmeta">더불어민주당 · 강원 춘천철원화천양구갑 · 재선</span></div>
+    <div class="compact-card"><span class="cname">황희</span><span class="cmeta">더불어민주당 · 서울 양천구갑 · 3선</span></div>
+  </div>
+</section>
+
+<!-- CATEGORY 5 -->
+<section class="cat">
+  <div class="cat-head">
+    <span class="cat-num">05</span>
+    <h2 class="cat-title">현재 타 위원회 소속 · PM 스탠스 있음</h2>
+    <span class="cat-desc">32명 · 국토위(2025~26) + 행안위·국정감사·발의자 교차확인</span>
+  </div>
+  <p class="note-inline">2025년 말 상임위 개편 이전에는 국토위 소속으로 PM법을 실질적으로 조율했던 의원 16명에 더해, 도로교통법을 다루는 <b>행정안전위원회</b>와 <b>국정감사</b> 회의록까지 넓혀 확인한 8명을 추가했습니다. 모두 API 기준 현재 국토위가 아닌 다른 위원회 소속입니다.</p>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">손명수</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 용인시을</span>
+      <span class="chip meta">초선</span>
+      <span class="chip meta">現 정무위원회</span>
+      <span class="stance-tag support">면허 요구는 과도한 규제</span>
+    </div>
+    <p class="stance-text">4개 회의를 관통하며 법 취지를 가장 적극적으로 설명·방어한 실무 설계자입니다. "싱가포르를 제외하면 면허를 요구하는 나라가 사실상 없다"며 원동기면허나 새 전용면허 신설 모두 "너무 지나친 과도한 규제"라고 반복 반박했고, 대신 식별표지 부착+본인확인+대여 시 교육이수라는 비면허 대안(3안)을 직접 설계해 관철시켰습니다. 속도를 10㎞/h만 낮춰도 사망사고가 90% 이상 준다는 근거로 20㎞/h 하향에는 찬성했습니다.</p>
+    <details class="quotes">
+      <summary>발언 요지 전체 44건 (2025-12-04 ~ 2026-04-29, 핵심 문장 중심 압축)</summary>
+      <div class="quote-block">
+        <p style="font-weight:700;margin:10px 0 4px;">2025-12-04 · 국토위 교통소위 (13건)</p>
+        <div class="quote-item"><q><b>이 PM법은 우리가 제정을 하려고 하는 거고요, 기존의 법을 개정하는 게 아니고.</b> (…) <b>첫째가 사고, 그래서 안전을 강화해야 되겠다.</b> (…) <b>A사 기준으로만 500만 명이 넘고</b> 전체적으로 엄청난 많은 사람들이 이용을 하고 있습니다. (…) <b>전 세계적으로 싱가포르를 제외하고는 면허를 요구하는 나라가 사실상 거의 없고</b> 이게 자전거보다 더 쉽거든요. (…) <b>첫째, 지금 자유업으로 하고 있는 대여업자를 관리를 하기 위해서 등록제로 바꾸자</b> 이게 첫 번째입니다. (…) <b>두 번째 포인트는 속도를 낮추는 겁니다.</b> (…) <b>사망사고가 90% 이상 줄어요, 10㎞/h만 낮춰도.</b> (…) <b>마지막 쟁점이 면허입니다.</b> (…) <b>3안은 그 둘 다 너무 과도한 규제다 (…) 식별표지를 반드시 하도록 하고 그 식별표지를 누가 타는지 본인 확인을 하도록 하자</b>, 그리고 대여업자에게 교육을 받도록 하자. (…) <b>마지막 3안은 저의 의견입니다.</b> 이것은 너무 지나친 새로운 면허를 만들거나 원동기면허를 요구하는 것은 현실에 맞지도 않고 (…) 과도한 규제다.</q></div>
+        <div class="quote-item"><q><b>보험 가입됩니다.</b> 단체보험으로 대여업자에게 보험 의무가 있고 그 보험을 하려면 본인 확인 절차가 있어야 되는 겁니다.</q></div>
+        <div class="quote-item"><q>'전동'만 추가하는 거지요?</q></div>
+        <div class="quote-item"><q>도로교통법에 원동기는 16세 이상으로 돼 있는데 <b>이 PM은 실질적으로 중학생들이 많이 타요.</b> 독일이나 프랑스 이런 데는 14세로 되어 있어요.</q></div>
+        <div class="quote-item"><q>그래서 이 부분 저희가 논의할 필요는 있을 것 같아요.</q></div>
+        <div class="quote-item"><q>제가 좀……</q></div>
+        <div class="quote-item"><q>(…) <b>지금 우리가 이 법을 제정하고자 하는 취지는 도로교통법에서 이걸 이미 규제를 하고 있습니다. 규제를 하고 있는데 작동을 안 하고 있습니다.</b> (…) 그런 상황에서 이 PM 법을 통해서 대여사업자 관리를 통해서 주차 관리도 하고 속도도 낮추고 해서 안전관리도 하자는 취지가 이 법의 제정 취지 (…) <b>이 법이 안 생기고, 법이 안 생기면 지금 현재 있는 원동기 수준의 강력한 규제를 하고 있는 도로교통법만 남는데 그것이 안전에 도움이 되느냐, 주차시설 관리에 아무 도움이 안 되고 있거든요.</b></q></div>
+        <div class="quote-item"><q>면허는 대안3으로……</q></div>
+        <div class="quote-item"><q>그게 대안2예요?</q></div>
+        <div class="quote-item"><q><b>만약에 하신다면 저는 반드시 중학생, 고등학생, 대학생 이 사람들의 참여가 필요하다고 생각합니다.</b></q></div>
+        <div class="quote-item"><q>왜냐면 저는 자꾸 우리가 부모 입장에서 계속 못 하게 만드는 것처럼……</q></div>
+        <div class="quote-item"><q><b>수요자의 의견을 반드시 들어야 돼요.</b></q></div>
+        <div class="quote-item"><q>(…) <b>이 법을 만드는 것이 마치 면허를 풀어 주는 것처럼 다들 오해를 하시는 것 같은데 제 생각은 그게 아니고요.</b> (…) 이것을 풀어 주는 게 아니라 <b>관리를 더 잘하게 하기 위한 법이다</b>, 저는 그렇게 이해하고 있습니다.</q></div>
+
+        <p style="font-weight:700;margin:14px 0 4px;">2025-12-15 · 국토위 교통소위 공청회 (24건)</p>
+        <div class="quote-item"><q>먼저 송태진 교수님께 여쭤보겠습니다. 도로별로 속도를 달리하는 게 필요하다고 말씀하셨는데 기술적으로 어떻게 가능한가요?</q></div>
+        <div class="quote-item"><q>그러면 미리 구역별로 속도를 다르게 디바이스에 지정을 할 수 있다는 얘기인가요?</q></div>
+        <div class="quote-item"><q>그게 원격으로 아니면 미리 아예 다……</q></div>
+        <div class="quote-item"><q>정구성 변호사님, 업계에서도 그건 다 같이 인지하고 계신가요?</q></div>
+        <div class="quote-item"><q>(…) <b>안전을 위해서 25㎞보다는 20㎞가 더 안전하다, 그래서 좀 낮추자</b>는 의견 (…) 그런데 PM이 어떻게 그게 되는지 제가 이해가 안 돼서 여쭤본 거예요.</q></div>
+        <div class="quote-item"><q>모든 디바이스가 그렇게 돼요?</q></div>
+        <div class="quote-item"><q>지금 교수님이 연구한 바에 따르면 가능하다 이런 말씀……</q></div>
+        <div class="quote-item"><q>그러니까 지금 현재 일반적인 건 아니고 교수님이 연구한 그 업체하고 했다는 말씀, 그렇게 이해되는 것 같은데.</q></div>
+        <div class="quote-item"><q>(…) <b>지금 면허가 가장 핵심 이슈거든요.</b> (…) <b>면허하고 교육하고의 차이가 좀 불분명한 것 같은데</b> (…) <b>용어를 명확히 해야 될 것 같아요. PM 전용 면허가 아니라 PM 대여업자들이 대여하기 전에 반드시 혹은 필수적으로 온라인 교육을 받도록 하는 그런 취지</b>로 제가 이해가 되는데 맞습니까?</q></div>
+        <div class="quote-item"><q>(…) <b>라이선스라는 것은 국가에서 말 그대로 면허를 주는 건데 이것은 좀 다른 개념인 것 같고 PM 전용 라이선스가 아니라 PM을 탈 수 있는 일종의 요건 같은 거지요.</b> '교육 필수 이수' 이렇게 이해가 돼요.</q></div>
+        <div class="quote-item"><q>정구성 변호사도 마찬가지인가요?</q></div>
+        <div class="quote-item"><q>그래서 저희가 가장 크리티컬한 이슈가 면허 문제거든요. '싱가포르 이외에는 다 면허가 없다' 이렇게 말씀하셨거든요. 영국도 마찬가지입니까?</q></div>
+        <div class="quote-item"><q>(…) <b>현재 자전거도 면허가 없는데 자전거보다 훨씬 타기 쉬운 PM에 면허를 요구하는 것이 현실적으로 맞는가</b> 그런 생각을 가지고 있었어요. (…) 필수교육을 해야 된다, 저도 그 점은 동의합니다.</q></div>
+        <div class="quote-item"><q>핵심사항은 저도 다 말씀을 드렸고요. <b>대부분 공통적인 의견이 원동기 면허는 너무 과하다. 그리고 지나친 규제도 안 맞다.</b></q></div>
+        <div class="quote-item"><q>(…) <b>현실적으로는 지금 전혀 그것을…… 그냥 법만 있는 거예요, 전혀 단속도 안 하고 할 수도 없고.</b> (…) 대신 <b>식별번호, 각 PM마다 고유식별번호가 있어서 그 식별번호에 따라서 본인 확인을 의무화</b>하고 그것을 대여할 때 교육도 반드시 받도록 의무화하고 이 정도로 하면 어떨까 싶습니다.</q></div>
+        <div class="quote-item"><q>(…) <b>지금 이게 뭐냐 하면 운전자격 이렇게 가면 도로교통법에서 하는 게 맞아요.</b> (…) <b>PM법은, 여기서 지금 PM법의 제정 목적이 PM 대여사업자 관리법이잖아요. 여기서는 면허를 규정하는 게 아예 이 법에서 안 맞는 거예요.</b> (…) <b>이 법이 제정이 돼서 정착이 되면 도로교통법을 바꿔야지요.</b></q></div>
+        <div class="quote-item"><q>아닙니다.</q></div>
+        <div class="quote-item"><q>12조 이건 바꿔야지요. 보니까 12조 이건 바꿔야 되고……</q></div>
+        <div class="quote-item"><q>(…) <b>이 PM이 개인이 사서 쓰는 게 있고 지금 KC인증 요건이 25㎞/h 이하거든요. 무게는 30㎏ 이하 이렇게 돼 있는데 이게 일종의 상품처럼 돼 있어요.</b></q></div>
+        <div class="quote-item"><q>예, 법에서 그렇게 상품처럼 돼 있어요. (…) <b>이건 충돌이 아닙니다.</b> 충돌이 아니고 대여사업……</q></div>
+        <div class="quote-item"><q>(…) <b>자격, 면허 이것은 도로교통법에서 하는 게 맞아요. 이 법에서 하면 안 돼요.</b> (…) 기존에 이미 정의된 용어로 통일하는 게 맞을 것 같아요, '개인형 이동장치' 이렇게.</q></div>
+        <div class="quote-item"><q>용어.</q></div>
+        <div class="quote-item"><q>2로 가는데 교육 강화가 아니라 교육 의무화.</q></div>
+        <div class="quote-item"><q>본인 확인하고 면허는 없고. 여기서 <b>면허는 터치를 안 하는 거예요.</b></q></div>
+
+        <p style="font-weight:700;margin:14px 0 4px;">2026-04-21 · 국토위 교통소위 (6건, 헌재 위헌판결 후 재논의)</p>
+        <div class="quote-item"><q>삭제하는 이유를 말씀해 주셔야지, 전문위원님.</q></div>
+        <div class="quote-item"><q>전문위원이 본인의 의견을 내시는 게 아니라 이 안이 왔으면 거기에 대한 검토의견을 주셔야지 '알고 있습니다' 그렇게 하면 어떻게 해요?</q></div>
+        <div class="quote-item"><q>(…) <b>면허에 관한 규정이 가장 첨예하게 의견이 좀 대립</b>이 되었다고 할까 그랬습니다. (…) 우리 교통소위에서는 <b>면허 부분은 이 법에서 다룰 내용이 아니다 그것은 도로교통법에서 다룰 내용이다</b> 이렇게 하고 통과를 시켰습니다. (…) 12조 이용자의 의무에 5호가 '도로교통법 및 이 법에서 정한 교통안전 규정을 준수할 것' 이게 면허 규정과 연계될 수 있다 저는 그렇게 이해가 돼요. 그래서 이 조항을 삭제하면 면허 규정은 도로교통법으로 넘기고…</q></div>
+        <div class="quote-item"><q>(…) <b>PM의 안전을 좀 더 보장하자 이 취지에 반대하는 분은 아무도 안 계실 것 같아요.</b> (…) <b>현실적으로 단속을 못 하고 있지요. 경찰청이 단속을 거의 안 하고 있어요.</b> (…) <b>현실적으로 지금 오륙백만 명 이상의 이용자들 중에 상당수가 사실상 이용을 못 하게 된다.</b> 우리가 법을 만들어서 그렇게 하는 것이 바람직하냐 여기에 대한 판단을 하면 될 것 같습니다.</q></div>
+        <div class="quote-item"><q>사족 같지만 저도 첨언을 하겠습니다.</q></div>
+        <div class="quote-item"><q>(…) <b>도로교통법에 운전면허 취득 요건이 정해져 있습니다, 안전모 착용도. 경찰청이 실질적으로 단속을 안 하고 있어요.</b> 하면 돼요, 지금도. (…) 그러니까 오늘 이게 결론이 안 날 것 같은데 경찰청하고도 분명하게 얘기를 하고…… 왜 이 법을, 사실상 체계적인 관리법이 없어도 그냥 경찰청 자기들이 하면 되는 의무를, 이 체계적인 관리법을 걸어 가지고 사실상 지금 제정이 어렵게 만드는 상황이라는 말이에요.</q></div>
+
+        <p style="font-weight:700;margin:14px 0 4px;">2026-04-29 · 국토위 교통소위 (최종 의결, 1건)</p>
+        <div class="quote-item"><q>(…) <b>이 법의 도입·제정 취지는 지금 도로에 무분별하게 아무 데나 주차하고 버리고 그렇게 관리되지 않고 있는 개인형 이동장치를 체계적으로 관리할 수 있도록 하자 하는 게 이 법 제정의 가장 큰 취지</b>입니다. (…) <b>제가 알기로는 면허 여부를 대여사업자가 확인을 하게 하면 거의 절반 이상이 줄어듭니다.</b> 지금 이미 600만 명 가까운 사람들이 이용을 하고 있는 (…) <b>이용자 그리고 대여사업자의 의견을 좀 더 들을 필요가 있다, 그래서 조금 더 충분히 의견을 들어 본 다음에 몇 달 더 후에 제정하더라도 오히려 더 합리적인 법안을 만드는 것이 옳지 않겠나</b> 하는 의견입니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">정점식</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">경남 통영시고성군</span>
+      <span class="chip meta">3선</span>
+      <span class="chip meta">現 국회운영위·외통위·정보위</span>
+      <span class="stance-tag support">전용면허=과도한 규제, 교육이수로 대체</span>
+    </div>
+    <p class="stance-text">제정법이니 공청회로 폭넓은 의견을 수렴해야 한다고 요구해 실제로 관철시켰습니다. "전용 자격을 도입하면 오히려 규제 강화라는 비판이 나올 수 있다"며, 일정 연령 이상이 온라인 교육을 이수하면 자동으로 자격을 부여하는 완화안을 제시했고, 주차 간격이 넓으면 이용자가 줄고 좁으면 보행 방해가 된다는 딜레마도 구체적으로 짚었습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 3건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-12-04</span><q>사실은 전용 자격을 도입을 하면 규제를 오히려 강화하는 것 아니냐라는 비판도 있을 수가 있으니까, 저는 속도 20㎞/h 이하로 하는 것에 대해서는 동의를 하고 만일 전용 자격을 도입한다고 하더라도 일정 연령 이상이 온라인을 통한 교육 이수를 한다면, 자동적으로 자격을 부여한다면 과도한 규제다라는 그 이야기는 안 나올 것 같아요.</q></div>
+        <div class="quote-item"><span class="qdate">2025-12-04</span><q>기본적으로 제정법을, 법을 제정하려고 할 때는 공청회를… 물론 의결을 통해서 생략할 수는 있지만 공청회를 해서 다양한 관계자들의 의견을 한번 들어 봐야 된다고 생각합니다.</q></div>
+        <div class="quote-item"><span class="qdate">2025-12-15</span><q>주차허용구간의 사이가 굉장히 길면 이용자 수가 줄어들 수밖에 없는 문제고 그리고 너무 좁으면 또 보행인들의 보도 통행 방해 등의 문제가 있기 때문에 이 부분에 대해서는 굉장히 신중을 기해야 된다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">배준영</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">인천 중구강화군옹진군</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 예결위·재정경제기획위</span>
+      <span class="stance-tag support">과도한 규제는 곤란</span>
+    </div>
+    <p class="stance-text">공청회 실시에 찬성했습니다. 면허 필요성의 근거(사고 파급효과)엔 공감하되 "제한속도를 20㎞로 낮춰도 단속이 안 되면 실효성이 있느냐"며 단속 실효성에 의문을 제기했고, 후반부로 갈수록 "편의를 억누를 만큼 과한 규제는 곤란하다"며 손명수 위원 노선에 동조했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 3건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-12-04</span><q>이게 사실 전 국가적인 또 국민들의 생활에 다 영향을 미치는 제정법안인데, 그리고 국회가 소통이 중요하다고 그러는데 이 부분에 있어서는 한 번 공청회를 하는 게 좋을 것 같습니다.</q></div>
+        <div class="quote-item"><span class="qdate">2025-12-15</span><q>제한속도를 25㎞에서 20㎞로 낮추자라는 걸 해야 되는데 이게 실효성이 있으려면 단속을 해서 5㎞가 넘어가는 경우에는 잡아내서 그걸 못 하게 해야 되거든요. 그런데 그게 실효성이 있느냐 그런 의문이 생기고.</q></div>
+        <div class="quote-item"><span class="qdate">2026-04-29</span><q>편의 자체를 억눌러 버릴 만큼 과한 점검이라든지 규제가 있으면 좀 곤란하다는 생각을 하고 있는데…</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">홍기원</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 평택시갑</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 외교통일위원회</span>
+      <span class="stance-tag support">최초 발의자 · 제정 추진</span>
+    </div>
+    <p class="stance-text">2020년 최초 발의자로, "2년 4개월 전에 1호 법안으로 제안한 건데 통과됐으면 좋겠다"고 직접 밝히며 시종일관 제정을 추진했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 2건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2022-09-21</span><q>지금 소위 개인형 이동수단(PM)이 많이 이용되고 있는데 그걸 규율하는 법이 없거든요. 지금 도로교통법에서는 도로상에서 운행하는 데 따른 안전 문제만 규율하고 있고 (…)</q></div>
+        <div class="quote-item"><span class="qdate">2023-02-09</span><q>이게 사실 제가 한 2년 4개월 전에 1호 법안으로 제안한 건데 일단 오늘 통과가 됐으면 좋겠고요.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">한준호</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 고양시을</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 과방위</span>
+      <span class="stance-tag support">필요성 100% 공감</span>
+    </div>
+    <p class="stance-text">"제정법 자체가 지금 공백인 부분을 메꾸는 것이기 때문에 필요성에 100% 공감한다"며 소위 내 신속한 통과를 주문한, 가장 명확한 찬성파입니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2022-09-21</span><q>제정법 자체가 지금 현재 공백인 개인형 이동수단의 공백을 메꾸는 제정법이기 때문에 그 필요성에 있어서는 100% 공감하고 저희 소위 내에서도 이 내용들을 적극적으로 검토해서 통과를 시키는 게 어떤가 하는 의견입니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">박상혁</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 김포시을</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 정무위원회</span>
+      <span class="stance-tag support">헬멧 규제 완화 검토</span>
+    </div>
+    <p class="stance-text">도로교통법 개정으로 헬멧 의무화 이후 이용률이 크게 떨어졌다며, 외국처럼 속도를 낮추는 대신 헬멧 착용을 자유화하는 방안을 검토해야 한다고 제안했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2021-06-10</span><q>요새 도로교통법 개정 이후에 헬멧을 쓰게 돼서 이용률이 굉장히 떨어지고 있다 그래서 속도를 낮추고 (…) 외국 같은 경우는 속도를 낮추는 대신 헬멧을 의무 착용하는 것을 자유화하는 것이 어떠냐 이런 취지로…</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">문진석</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">충남 천안시갑</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 재정경제기획위</span>
+      <span class="stance-tag support">단계적 착용 유도 선호</span>
+    </div>
+    <p class="stance-text">헬멧을 곧바로 강제하기보다 "이용하며 이점을 느끼고 적응한 사람들에게 착용을 유도하면 거부감이 덜할 것"이라며 유예기간을 둔 단계적 접근을 선호했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2021-06-10</span><q>안전모를 착용할 수 있도록, 사실은 개인형 이동수단을 이렇게 좀 활용하면서 그 이점을 느끼고 어느 정도 적응하는 사람들은 안전모 착용하고 운행을 해라 했을 때 거부감이 좀 덜할 것 같아요.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">이연희</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">충북 청주시흥덕구</span>
+      <span class="chip meta">초선</span>
+      <span class="chip meta">現 과방위·성평등위</span>
+      <span class="stance-tag support">이용연령 완화·산업 활성화</span>
+    </div>
+    <p class="stance-text">"중학생들도 많이 이용하는 현실에서 자격연령을 14세까지 완화하는 게 산업 활성화 측면에서 긍정적이겠다"는 논의가 있었다고 밝히며 완화 쪽에 무게를 실었습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-12-15</span><q>현실적으로 중학생들도 많이 이용을 하고 있는 현실에서 자격연령을 14세까지로 완화하는 게 산업의 활성화나 여러 가지 측면에서 긍정적이겠다 이런 논의를 한 적이 있는데…</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김성회</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 고양시갑</span>
+      <span class="chip meta">초선</span>
+      <span class="chip meta">現 국방위원회</span>
+      <span class="stance-tag support">PM만 부모책임 묻는건 형평성 어긋나</span>
+    </div>
+    <p class="stance-text">"지금 자동차를 13세 미만이 몰다 걸리면 어떻게 되나", "PM만 처벌하는 거냐", "부모는 PM만 처벌받고 자동차는 안 받느냐"며 자동차·PM·픽시자전거 간 미성년자 처벌 형평성을 조목조목 캐물었습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건 · 출처: 행정안전위원회</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2026-03-24 · 행안위 법안심사제2소위</span><q>지금은 자동차를 13세 미만이 몰다가 걸리면 어떻게 되나요? (…) 그러면 PM만 처벌하는 건가요? (…) 그러니까 부모는 처벌하냐고요? PM은 한다면서요. PM만 하고 자동차는 안 하고?</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">박형수</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">경북 의성청송영덕울진</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 법제사법위원회</span>
+      <span class="stance-tag support">지정주차 의무화가 산업 위축시킨다</span>
+    </div>
+    <p class="stance-text">"지정된 주차장에만 세워야 한다고 규정하면 이 산업이 발전할 수 있겠느냐, 띄엄띄엄 하나씩 만들어 놓으면 산업이 다 죽는다"며 지정 주차장 의무화가 산업 특성과 상충한다고 우려했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2023-12-07</span><q>이것을 지정된 주차장에만 주차를 해야 된다 이렇게 규정을 하면 이 산업이 발전될 수가 있겠습니까? (…) 띄엄띄엄 하나씩 만들어 놓으면 이 산업은 다 죽는 것이에요.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">임호선</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">충북 증평진천음성</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 행정안전위원회</span>
+      <span class="stance-tag support">처벌 일변도 접근 경계</span>
+    </div>
+    <p class="stance-text">면허 진입장벽을 낮추는 방향에는 신중론을 견지하면서도, "벌칙 규정이 대부분 청소년과 여성 이용자를 전과자로 양산할 가능성이 있다"며 처벌 일변도 접근을 경계했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건 · 출처: 행정안전위원회</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2023-11-21 · 행안위 법안심사제2소위</span><q>오히려 저는, 벌칙 규정까지 나오고 있는데 이게 대부분 청소년하고 여성들이 많이 이용을 하는데 너무 전과자를 양산할 가능성이 있기 때문에…</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">박성민 · 정준호 · 윤준병 · 송석준 · 김성원 · 한정애</span>
+      <span class="chip meta">6명 · 각자 다른 위원회 소속</span>
+      <span class="stance-tag support">활성화형 법안 공동/대표발의</span>
+    </div>
+    <p class="stance-text">12건 병합 심사 대상 중 나머지 6건의 발의자들로, 대부분 "안전 및 이용 활성화" 계열 법안입니다.</p>
+    <div class="compact-grid" style="margin-top:8px;">
+      <div class="compact-card"><span class="cname">박성민</span><span class="cmeta">국민의힘 · 울산 중구 · 재선 · 現 산업통상자원중기위 · 2201222(활성화)</span></div>
+      <div class="compact-card"><span class="cname">정준호</span><span class="cmeta">더불어민주당 · 광주 북구갑 · 초선 · 現 문체위 · 2210310(활성화)</span></div>
+      <div class="compact-card"><span class="cname">윤준병</span><span class="cmeta">더불어민주당 · 전북 정읍고창 · 재선 · 現 농해수위 · 2213771(활성화)</span></div>
+      <div class="compact-card"><span class="cname">송석준</span><span class="cmeta">국민의힘 · 경기 이천시 · 3선 · 現 외통위 · 2214225(관리+활성화 병기)</span></div>
+      <div class="compact-card"><span class="cname">김성원</span><span class="cmeta">국민의힘 · 경기 동두천양주연천을 · 3선 · 現 산업통상자원중기위 · 2214255(안전관리·운영)</span></div>
+      <div class="compact-card"><span class="cname">한정애</span><span class="cmeta">더불어민주당 · 서울 강서구병 · 4선 · 現 외통위 · 2214414(활성화)</span></div>
+    </div>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">맹성규</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">인천 남동구갑</span>
+      <span class="chip meta">3선</span>
+      <span class="chip meta">前 국토위원장 · 現 외교통일위원회</span>
+      <span class="stance-tag mixed">인프라 종합정비 요구</span>
+    </div>
+    <p class="stance-text">2022년 국정감사 당시부터 자전거도로 설치기준 미흡, 전동킥보드의 자전거도로 통행 부적합성(요철·속도·무게 불일치)을 지적하며 전용도로·전용주차장·자전거도로를 종합 검토할 것을 제안했습니다. 2025년 말에는 국토위원장으로서 12건 병합 대안 처리를 주재 — 이 사안을 가장 오래 관장한 인물 중 하나입니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건 · 출처: 국정감사</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2022-10-14 · 국토교통위 국정감사</span><q>전동킥보드가 20년에 법률 개정으로 자전거도로를 통행할 수 있도록 허용이 됐는데 이게 요철도 있고 그다음에 모터 제한 그다음 속도, 무게 등이 있어서 적합하지 않은 경우가 있거든요. 전체적으로 킥보드 등 전용 도로하고 전용 주차장 그리고 자전거도로 이걸 종합적으로 한번 검토해 보시면 어떨까 제안을 드립니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">송기헌</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">강원 원주시을</span>
+      <span class="chip meta">3선</span>
+      <span class="chip meta">現 과방위</span>
+      <span class="stance-tag inquiry">면허는 도로교통법 소관</span>
+    </div>
+    <p class="stance-text">가장 일관된 법체계 정합성론자입니다. "운전자격이라는 게 도로교통법의 면허와 같은 개념인데 이걸 이 법에 넣는 게 이상하다"는 입장을 두 회의에 걸쳐 반복했고, 법률가로서 "자격"과 "면허" 개념을 정밀하게 구분하며 "자동차관리법이 있어도 도로교통법상 면허가 있어야 운전하듯, 이 법에 안 넣어도 도로교통법에 따라 면허가 필요하다"고 손명수 위원의 설계를 반박했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 3건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-12-15</span><q>운전자격이라는 게 도로교통법에 있는 면허하고 똑같은 개념인데 이것을 도로교통법이 아니라 이 법에 넣는 게 이상하지 않아요, 교통수단인데 이것도 마찬가지로?</q></div>
+        <div class="quote-item"><span class="qdate">2025-12-15</span><q>법적으로 면허라는 것은 일반적으로 할 수 없는데 특별히 그것을 할 수 있는 자격을 국가가 정해서 하는 거예요. (…) 자격이 좀 더 포괄적인 개념이에요.</q></div>
+        <div class="quote-item"><span class="qdate">2026-04-21</span><q>자동차관리법이 있어도 차 운전하려면 도로교통법에 따라서 운전면허가 있어야 되는 거예요. (…) 이 법에 그것 안 넣어 놔도 PM을 운전하려면 도로교통법에 따라서 면허를 가져야 돼요.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">진성준</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">서울 강서구을</span>
+      <span class="chip meta">3선</span>
+      <span class="chip meta">現 국방위원회</span>
+      <span class="stance-tag inquiry">인프라·보험 등 균형 질의</span>
+    </div>
+    <p class="stance-text">인프라 충분성을 지적하는 참고인에게 "이것 외에 추가로 필요한 인프라는 무엇이냐"고 되묻는 등, 인프라·보험 의무화·대여량 총량제를 균형 있게 질의했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2021-06-10</span><q>안전하게 통행 가능한 공간이 절대적으로 부족하다, 그래서 신속한 인프라 정비가 필요하다 이렇게 말씀하셨는데 (…) 이것 외에 추가로 필요한 인프라는 어떤 것이 있습니까?</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김상훈</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">대구 서구</span>
+      <span class="chip meta">4선</span>
+      <span class="chip meta">現 재정경제기획위</span>
+      <span class="stance-tag inquiry">법안 간 용어 불일치 지적</span>
+    </div>
+    <p class="stance-text">"개인형 이동수단"과 "개인형 이동장치"로 두 발의자가 각각 다른 용어를 쓴다는 점을 최초로 지적하며 용어 정리를 요구했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2021-06-10</span><q>제정법안을 발의하신 두 분의 의원님들께서 각각 다른 개념을 도입하셨어요. 한 분은 '개인형 이동수단'이라고 제목을 명명하시고 한 분은 '개인형 이동장치'라고 명명을 하셨어요. 교통정리가 필요하지 않을까 싶고.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">이만희</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">경북 영천시청도군</span>
+      <span class="chip meta">3선</span>
+      <span class="chip meta">現 보건복지위원회</span>
+      <span class="stance-tag inquiry">규격 기준 조문 정비</span>
+    </div>
+    <p class="stance-text">개인형 이동장치의 규격 기준을 도로교통법 개정이 아니라 전기용품 및 생활용품 안전관리법 하위 고시로 정리할 것을 제안하는 등, 찬반보다는 법체계 정합성·조문 정비에 집중한 실무형 관여를 보였습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건 · 출처: 행정안전위원회</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2022-11-23 · 행안위 법안심사제2소위</span><q>(개인형 이동장치의) 규격과 관련된 사항은 현행 전기용품 및 생활용품 안전관리법과 그 하위법령, 그리고 국가기술표준원 고시인 안전확인대상생활용품의 안전기준에서 정하는 것으로서 도로교통법 개정이 아닌 고시 등의 개정을 검토할 필요가 있다는 내용이 되겠습니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">송언석</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">경북 김천시</span>
+      <span class="chip meta">3선</span>
+      <span class="chip meta">現 예결위·정무위</span>
+      <span class="stance-tag inquiry">인프라 구축 현실성에 의문</span>
+    </div>
+    <p class="stance-text">"단기간에 PM이 다닐 수 있는 교통 인프라가 구축되기는 어렵지 않느냐"며, 법이 통과돼도 결국 기존 자전거도로나 인도를 이용할 수밖에 없을 거라고 지적했습니다. PM이 업무용인지 레저용인지에도 의문을 제기했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2021-06-10</span><q>단기간 내에 PM, 개인용 이동수단이 다닐 수 있는 교통 인프라가 구축되기는 어렵지 않습니까? 그런 법이 통과된다 하더라도 (…) 결국 기존의 자전거도로를 이용하거나 부득이하게 인도를 활용할 수밖에 없을 가능성이 많다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김희정</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">부산 연제구</span>
+      <span class="chip meta">3선</span>
+      <span class="chip meta">現 교육위원회</span>
+      <span class="stance-tag caution">규제 공백 비판 · 등록·번호판제 요구</span>
+    </div>
+    <p class="stance-text">법명·정의 용어 정리를 요구하고, "가상 지정주차제"가 야간에 오히려 안전 사각지대를 만들 수 있다고 구체적으로 반박했습니다. 2024년 국정감사에서는 전동킥보드 규제의 국제 비교(전면금지 vs 등록·번호판제)를 제시하며 "이도저도 아닌" 한국의 규제 공백을 비판했고, 배터리 화재·번호판 미부착 문제도 별도로 추궁 — 이 사안을 가장 오래, 여러 각도에서 다룬 의원 중 하나입니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 5건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-12-04</span><q>법안을 제정하고 있기 때문에 법 제정명도 저는 보다 명확하게 되었으면 합니다. (…) 개인형 이동수단의 정의가 명확하게 (…) 되어야 한다.</q></div>
+        <div class="quote-item"><span class="qdate">2025-12-15</span><q>변동성이 있기 때문에 PM을 이용하지 않는 일반인들의 경우는 그게 주차장인지 인지를 못 하고 있어서 야간이나 이럴 때 오히려 사고가 날 수가 있고 보행 방해요소가 법적으로 인정받게 될 거거든요. 그래서 현행법하고 충돌하는 지점은 없는지 궁금합니다.</q></div>
+        <div class="quote-item"><span class="qdate">2026-04-21</span><q>현장의 혼란을 피하기 위해서는 이 법이 발현되는 순간 업자들은 정확하게 뭐를 해야 되고 그다음에 타는 사람들은 뭐를 해야 되고 그다음에 관리감독하는 사람은 뭘 해야 되는지가 아주 명확해야 된다고 생각하거든요.</q></div>
+        <div class="quote-item"><span class="qdate">2024-10-24 · 국정감사</span><q>전동킥보드 관련해서는요 전 세계적인 트렌드를 보면 크게 둘 중의 하나의 방향으로 가고 있습니다. 하나는 아예 그 도시에 못 들어오게 하거나 (…) 하나는 아예 등록을 하고 번호판을 달고 철저하게 관리하는 방향으로 가고 그렇습니다. 그런데 우리는 이도 저도 아니고…</q></div>
+        <div class="quote-item"><span class="qdate">2024-10-21 · 국정감사</span><q>전동킥보드 화재 사고도 늘어나고 있는 것 알고 계시지요? (…) 통상 전동킥보드 보관을 가정에서 어디다 하는지 알고 계세요? (…) 일본이나 싱가포르 같은 경우는 전동킥보드 등록도 하고 번호판 부착도 하고 있거든요.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">천준호</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">서울 강북구갑</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 국방위·운영위</span>
+      <span class="stance-tag caution">면허 확인 존치 · 완화에 신중</span>
+    </div>
+    <p class="stance-text">2020년부터 2026년까지 가장 오래 이 사안을 추적하며 시종일관 안전 강화를 주장했습니다. 헌재 판결(2025-12-18)이 운전면허·안전장구 요구가 과도한 조치가 아니라고 판단했다는 점을 근거로 면허 확인 조항 존치를 끝까지 주장했고, 2023년 행안위에서는 "쉽게 면허를 취득하게 해주면 사고 위험이 높은 연령층의 이용 폭이 넓어지는 것 아니냐"며 진입장벽 완화에 신중론을 폈습니다. PM 책임보험 의무화도 별도로 요구했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 5건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2020-11-19</span><q>전동킥보드 관련해서 민원과 사고가 지금 끊이지 않고 있는데요. 일단 PM법이 이번에 법안심사를 하게 될 텐데 이것이 빨리 처리가 돼야만 여러 가지 제도적 장치를 마련하는 데 큰 도움이 될 거라고 생각을 합니다.</q></div>
+        <div class="quote-item"><span class="qdate">2026-04-21</span><q>헌법재판소가 판결했던 주요 내용들에 따르면 운전면허라든지 그리고 안전장구라든지 이런 것이 과도한 조치가 아니다라고 하는 취지로 조목조목 의견을 달아 주고 계시거든요.</q></div>
+        <div class="quote-item"><span class="qdate">2023-11-21 · 행안위 법안심사소위</span><q>지금 개인형 이동장치로 인한 사고의 발생 건수가 급증하고 있고 사망사고도 늘어나고 있는 것으로 알고 있는데 맞지요? (…) 쉽게 PM 면허를 취득하게끔 만들어 주면 그것이 사고 위험이 높은 연령층의 이용 폭을 더 확대함으로써 (…) 안전이라는 측면에서는 이게 선행되는 게 맞냐라고 하는 의구심이 들어서…</q></div>
+        <div class="quote-item"><span class="qdate">2025-10-16 · 국정감사</span><q>하대성 자동차손해배상진흥원장께 간단히 여쭤보겠습니다. 개인이동장치, PM이라고 하는 것 중에 전동킥보드 (…) 자동차 책임보험 가입 대상이라는 판결이 있었습니다. 그런데 실제로 책임보험 가입이 의무화되어 있지는 않지요? (…) 법안을 빨리 마련해서, 개인형이동장치 책임보험을 의무가입 하는 법적 장치를 빨리 마련할 필요가 있겠습니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">민홍철</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경남 김해시갑</span>
+      <span class="chip meta">4선</span>
+      <span class="chip meta">現 국방위원회</span>
+      <span class="stance-tag caution">결국 면허화 아니냐는 문제의식</span>
+    </div>
+    <p class="stance-text">정의 범위(전동자전거 포함 여부) 등 기술적 정합성을 반복적으로 추궁했습니다. "그러면 결국 운전면허 자격증을 발급해야 한다는 거 아니냐"는 문제의식을 던졌고, 도로교통법 "차마" 규정과의 정합성을 강조했습니다. 2022년 회의 서두에는 "오늘 이것을 꼭 통과시켜야 하느냐"며 처리 시급성에도 소극적이었습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 4건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2022-09-21</span><q>이것 제정법이지만 정말 공청회까지 했다고 하니까, 다 소위까지 회부됐고. 그래서 사실 오늘 저도 처음 전체 조문을 보니까 아직 이해를 못 하고 있는 상황에서 (…) 오늘 이것을 꼭 통과시켜야 됩니까?</q></div>
+        <div class="quote-item"><span class="qdate">2022-09-21</span><q>전동기 동력만으로 운행 가능한 자전거도 개인형 이동수단에 포함돼 있잖아요, 제정법에 따르면? 어찌 됐든 자전거라는 개념은 자동차관리법의 차에 해당되잖아요.</q></div>
+        <div class="quote-item"><span class="qdate">2025-12-15</span><q>그러면 결국은 운전면허 자격증을 발급을 해야 된다는 거 아닙니까, PM도?</q></div>
+        <div class="quote-item"><span class="qdate">2025-12-15</span><q>도로교통법에 '차마'가 규정이 돼 있어요. 이게 지금 PM이라고 개인형 전동 이동수단이잖아요. 그러면 이게 도로교통법에 규정된 차마에 해당되느냐 안 되느냐, 새로운 어떤 이동수단을 창설하는 거냐 이게 문제고요.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">서범수</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">울산 울주군</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 교육위원회</span>
+      <span class="stance-tag caution">청소년 안전 우려 · 면허제 요구</span>
+    </div>
+    <p class="stance-text">행안위(도로교통법 소관) 법안심사소위 핵심 질의자입니다. 2020년부터 PM과 자전거의 규제 형평성(헬멧 의무는 PM만, 처벌은 자전거 제외)을 집요하게 파고들며 "PM은 청소년 이용이 많고 속도가 있어 면허제도 도입이 바람직하다"는 입장을 밝혔고, 2026년에는 "픽시자전거(공유자전거)는 면허 없이 타는데 PM은 면허가 있어야 하니 차원이 다르다"며 두 수단을 법적으로 구분해야 한다고 주장했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 2건 · 출처: 행정안전위원회</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2020-12-02 · 행안위 법안심사제2소위</span><q>하나 우려되는 것은 사실 PM을 청소년들이 많이 타거든요, 중학생들. 16세 미만의 친구들이 많은 포션을 차지해요. (…) 그렇기 때문에 면허제도를 도입하는 것이 바람직하다 하는 생각이 듭니다.</q></div>
+        <div class="quote-item"><span class="qdate">2026-03-24 · 행안위 법안심사제2소위</span><q>PM은 전동기 면허증이 있어야 되잖아요, PM을 하려면. 그러면 이거(픽시자전거)는 면허증 없어도 되잖아요. 픽시자전거하고 PM은 차원이 다른데. (…) 그런 차원에서 다를 거고. 그다음에 이것의 경우에는 그러면 초등학생 5학년이 탄다, 어떡할 건데? 누구한테 과태료를 부과할 건데?</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">서영교</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">서울 중랑구갑</span>
+      <span class="chip meta">4선</span>
+      <span class="chip meta">前 행안위원장 · 現 법제사법위원회</span>
+      <span class="stance-tag caution">안전장치 의무화 관철</span>
+    </div>
+    <p class="stance-text">2020년 행정안전위원장으로서 도로교통법 개정안(PM 조항 포함) 통과를 직접 주재하며 "안전장치 없이는 개인형 이동장치를 탈 수 없다는 부분을 명확히 짚고 넘어갔다"고 자평 — 안전 규제 강화 입장을 위원장 자격으로 관철시켰습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건 · 출처: 행정안전위원회</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2020-12-03 · 행안위원장</span><q>다시 한번 안전장치를 안 하고는 개인형 이동장치나 이런 것을 탈 수 없다고 하는 부분에 대해서 명확하게 저희 위원회에서 빠르게 짚고 넘어갔다는 말씀을 드리고 법안으로 오늘 통과시키게 될 것 같습니다.</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김교흥</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">인천 서구갑</span>
+      <span class="chip meta">3선</span>
+      <span class="chip meta">現 보건복지위원회</span>
+      <span class="stance-tag caution">견인업체 부당이득 · 단속체계 결함 지적</span>
+    </div>
+    <p class="stance-text">서울시가 전동킥보드 단속 권한을 공무원이 아닌 견인업체 기사에게 맡겨, 건당 4만원 견인료를 노린 견인업체가 3시간 유예구역을 즉시견인구역으로 속여 견인하는 사례를 통계(이의신청 374건/2.5개월)로 지적했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건 · 출처: 국정감사</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2021-10-20 · 국토교통위 국정감사</span><q>서울시는 다른 데하고 다르게 전동킥보드 단속 권한을 공무원이나 준공무원이 아닌 견인업체 기사에게 부여를 했어요. (…) 견인차 기사들은 전동킥보드 가져가면 1대당 견인료로 4만 원을 받아요. 그러니까 즉시견인구역이 아닌 3시간 유예 구역인데 즉시견인구역으로 가져가서 사진 찍어 가지고 4만 원 받고…</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">이해식</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">서울 강동구을</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 행정안전위원회</span>
+      <span class="stance-tag caution">사고 폭증 근거로 규제 강화 인정</span>
+    </div>
+    <p class="stance-text">"법을 시행도 안 해보고 왜 바꾸느냐"는 원칙론에 공감하면서도, 작년 약 900건이던 PM 사고가 올해 상반기에만 900건에 육박한다는 폭증 통계를 근거로 규제 강화 필요성을 인정했습니다. 다만 차도 난폭운전 규정을 PM에 그대로 적용하는 것은 과도하다며 신중한 조율을 요구했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건 · 출처: 행정안전위원회</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2020-12-02 · 행안위 법안심사제2소위</span><q>전문위원 검토보고도 있었습니다마는 법을 시행도 안 해 보고 왜 바꾸냐, 일견 타당합니다. 그런데 PM으로 인한 사고가 너무 폭증하고 있기 때문에, 최근 들어서는 작년 같은 경우에 약 900건 그리고 올해는 상반기에만 거의 900건에 가까운…</q></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">고동진</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">서울 강남구병</span>
+      <span class="chip meta">초선</span>
+      <span class="chip meta">現 외교통일위원회</span>
+      <span class="stance-tag caution">안전 법규 미비 지적</span>
+    </div>
+    <p class="stance-text">"PM이 킥라니, 즉 킥보드+고라니라는 합성어로 오명이 붙고 있다"며 안전사고 관련 법규가 아직 마련되지 않았다고 지적, 통계·세부계획 자료를 구체적으로 요구했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 행정안전위원회 국정감사</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2025-10-17</span><q>PM이라고 퍼스널 모빌리티라고 개인형 이동장치 이것 이야기 들어 보셨지요? 이게 교통수단으로 등장한 이후에 여러 가지 편리성도 있지만 이게 안전사고 관련해 가지고 법규가 마련이 아직 안 돼 있어요. 이게 지금 PM이 킥라니, 그러니까 킥보드 플러스 고라니, 이게 합성어인데 이런 식으로 오명이 붙여지고 있습니다.</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김영배</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">서울 성북구갑</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">現 행정안전위원회</span>
+      <span class="stance-tag caution">승차정원 초과 처벌 강화 발의</span>
+    </div>
+    <p class="stance-text">2020-12-02 행안위 법안심사소위 PM 심사에 참여했으나 원본 PDF 텍스트가 뒤섞여 당시 발언은 확정하기 어렵습니다. 다만 본인이 직접 대표발의한 도로교통법 개정안(2204933, 2024-10-28)을 확인했습니다 — 일산 공원에서 고등학생 2명이 정원 초과로 함께 탄 전동킥보드에 60대 행인이 치여 사망한 사고를 계기로, 승차정원 초과 운전 처벌을 20만원 이하에서 50만원 이하로 상향하는 내용입니다.</p>
+  </div>
+
+</section>
+
+<!-- CATEGORY 6 -->
+<section class="cat">
+  <div class="cat-head">
+    <span class="cat-num">06</span>
+    <h2 class="cat-title">국회의원이 아닌 기관 · 실무진 의견</h2>
+    <span class="cat-desc">6개 기관 · 가장 오래전 → 최신 순</span>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">경찰청 (기관)</span>
+      <span class="stance-tag support">진입장벽 완화론으로 선회</span>
+    </div>
+    <p class="stance-text">담당자가 송민헌 → 조지호 → 유재성 차장으로 바뀌면서 스탠스가 뚜렷하게 진화했습니다. 2020년 송민헌 차장은 "PM 면허제도 신설이 필요하다"고 명시적으로 밝혔지만, 2023년 조지호 차장은 "면허 취득 진입장벽을 낮추는 게 오히려 무면허운전을 줄이는 효과가 있다"며 완화론으로 선회, 원동기장치자전거보다 낮은 진입장벽의 PM 전용면허 신설에 긍정적이었습니다. 대여사업자 준수사항은 "도로교통법 체계상 맞지 않다"며 국토부 소관으로 선을 그었습니다.</p>
+    <div class="timeline">
+      <div class="tl-item">
+        <span class="tl-date">2020-11-19 · 2020-12-02</span>
+        <div class="tl-role">송민헌 경찰청차장</div>
+        <p class="tl-text">"PM 면허제도 신설이 필요하다"는 입장을 명시적으로 표명(박완수·박성민·천준호 의원안에 동의). 헬멧 미착용 처벌 도입에는 "가혹한 측면"을 우려해 단계적 접근 선호. 국토위의 PM 활성화법 제정 논의와의 정합성을 직접 언급.</p>
+      </div>
+      <div class="tl-item">
+        <span class="tl-date">2023-02-21 · 2023-11-21</span>
+        <div class="tl-role">조지호 경찰청차장</div>
+        <p class="tl-text">스탠스 전환 — "면허 취득 진입장벽을 낮추는 것이 오히려 무면허운전을 줄이는 효과가 있다"며 원동기장치자전거보다 낮은 진입장벽의 PM 전용면허 신설에 긍정적. 대여사업자 준수사항은 "도로교통법 체계상 맞지 않다"며 국토부 소관으로 명확히 선긋기.</p>
+      </div>
+      <div class="tl-item">
+        <span class="tl-date">2026-03-24</span>
+        <div class="tl-role">유재성 경찰청차장 · 조우종 경찰청교통기획과장</div>
+        <p class="tl-text">자전거 이용 활성화법이 우선 규율하고 미흡한 부분만 도로교통법으로 보완하는 이원적 접근 검토. 13세 미만 이용에 대한 보호자 과태료(10만원) 부과 관련 아동복지법 저촉 가능성도 자체 검토 중.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">부산광역시 (변성완 권한대행)</span>
+      <span class="stance-tag mixed">안전장치 전제 조건부 긍정</span>
+    </div>
+    <p class="stance-text">정동만 위원의 해운대·광안리·송정 관광지 퍼스널모빌리티 전용도로 제안에 대해, 안전을 위한 법·제도적 장치가 갖춰지면 관광 활성화의 좋은 대안이 될 수 있다고 조건부로 화답했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 국정감사(부산 현장)</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2020-10-13</span><q>지금 안전에 대한 문제가 많이 화두가 되고 있기 때문에, 하지만 <b>그 안전에 대한 부분에 대해서 법적이나 제도적인 장치가 강구되고 하면 우리 관광 활성화를 위한 좋은 대안이 될 수는 있다고 봅니다.</b></q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">국토교통부 (기관)</span>
+      <span class="stance-tag mixed">제정 추진 · 안전-활성화 균형</span>
+    </div>
+    <p class="stance-text">6년간 정부 측 답변자는 여러 차례 교체됐지만(김현미 장관 → 어명소 정책관/차관 → 강희업 제2차관 → 홍지선 제2차관), "법 제정이 필요하다"는 기조는 한 번도 흔들리지 않았습니다. 시간이 갈수록 "면허=경찰청, 교육의무=국토부"라는 역할 분담 논리가 정교해졌고, 담당 과장(배성호)은 "입법취지를 감안해 안전과 이용활성화 두 가지에 포커스를 맞췄다"고 대안 조정 배경을 설명했습니다.</p>
+    <div class="timeline">
+      <div class="tl-item">
+        <span class="tl-date">2020-11-19</span>
+        <div class="tl-role">김현미 국토교통부장관</div>
+        <p class="tl-text">청소년 대상 규제 완화에 따른 사고 우려를 인정하며, 가이드라인·민관협의체 구성 중이고 교육부·경찰청과 협의하겠다는 원론적 답변.</p>
+      </div>
+      <div class="tl-item">
+        <span class="tl-date">2021-06-10</span>
+        <div class="tl-role">어명소 국토교통부 종합교통정책관 (공청회)</div>
+        <p class="tl-text">업계·전문가 의견을 청취하는 자리에서 정부 입장을 조율.</p>
+      </div>
+      <div class="tl-item">
+        <span class="tl-date">2022-09-21 · 2023-02-09</span>
+        <div class="tl-role">어명소 국토교통부 제2차관</div>
+        <p class="tl-text"><q>"저희는 이 법이 굉장히 필요성이 높다고 생각합니다. 그래서 퍼스널 모빌리티 해서 굉장히 앞으로 시대에… 지금 어떻게 보면 좀 늦었을 수…"</q> — 제정 필요성에 적극 동의.</p>
+      </div>
+      <div class="tl-item">
+        <span class="tl-date">2025-12-04 · 2025-12-15</span>
+        <div class="tl-role">강희업 국토교통부 제2차관</div>
+        <p class="tl-text">대여사업자 관리법이라는 입법 목적을 명확히 하며, 면허(경찰청 소관)와 교육의무(이 법 소관)를 분리하는 손명수 위원의 설계를 옹호. 대안 1·2 중 대안2를 중심으로 실무 조율.</p>
+      </div>
+      <div class="tl-item">
+        <span class="tl-date">2026-04-21 · 2026-04-29</span>
+        <div class="tl-role">홍지선 국토교통부 제2차관</div>
+        <p class="tl-text">헌재 위헌 판결 이후 재논의 국면에서, 12조 5호(도로교통법 준수 조항) 존치 여부에 대한 경찰청 의견을 전달하며 실무 조정 지속.</p>
+      </div>
+      <div class="tl-item">
+        <span class="tl-date">2025-12-04</span>
+        <div class="tl-role">배성호 국토교통부 모빌리티총괄과장</div>
+        <p class="tl-text">실무 담당 과장으로서 국토부 대안(제명·조문) 자료를 소위에 직접 설명 — "입법취지를 감안해서 개인형 이동수단의 안전 및 이용 활성화, 두 가지에 포커스를 맞춰서" 대안을 조정했다고 보고.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">자동차손해배상진흥원 (하대성 원장)</span>
+      <span class="stance-tag inquiry">입법 공백 인정</span>
+    </div>
+    <p class="stance-text">PM을 자동차관리법상 "자동차"로 볼 것인지, 무보험 사고 피해자를 구제하는 정부 보장사업 대상에 포함할지가 "입법적 검토가 필요한 사항"이라고 인정했습니다 — 천준호 위원의 책임보험 의무화 요구에 대한 답변입니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 국정감사</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2025-10-16</span><q>PM을 자동차관리법상 자동차로 보느냐의 문제 그리고 정부 보장사업의 대상으로 포함하는 문제 이런 부분에 대해서 입법적인 검토가 필요한 사항으로 저희는 알고 있습니다.</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">국회 국토교통위원회 전문위원실</span>
+      <span class="stance-tag inquiry">기술 검토 · 조정</span>
+    </div>
+    <p class="stance-text">입법 찬반을 표명하는 자리가 아니라 법안 간 상충·정의 불명확성을 짚어 소위의 결론을 돕는 역할을 했습니다. 2021년 이지민 전문위원은 박성민 의원안이 "승차인원 1인"으로 제한해 전동자전거가 제외되는 문제를 지적했고, 2025년 임종수 전문위원은 12개 병합 법안의 쟁점(면허·속도·주차)을 압축 보고하며 대안 1·2 비교표를 제공했습니다.</p>
+    <div class="timeline">
+      <div class="tl-item">
+        <span class="tl-date">2021-02-03</span>
+        <div class="tl-role">이지민 전문위원</div>
+        <p class="tl-text">박성민 의원안이 개인형 이동장치를 "승차인원 1인"으로 제한해, 전동기 동력만으로 움직이는 자전거가 제외되는 문제를 지적하며 신중한 검토 필요성 제기.</p>
+      </div>
+      <div class="tl-item">
+        <span class="tl-date">2022-09-21 · 2023-02-09</span>
+        <div class="tl-role">최용훈 전문위원</div>
+        <p class="tl-text">정의 규정의 범위(자전거 포함 여부), 속도·무게 제한, 주차금지구역 등에서 국토부 의견과 상충하는 지점을 짚어 소위 논의를 구조화.</p>
+      </div>
+      <div class="tl-item">
+        <span class="tl-date">2025-12-04 · 2025-12-15</span>
+        <div class="tl-role">임종수 전문위원</div>
+        <p class="tl-text">12개 병합 법안의 쟁점(면허·속도·주차)을 압축 보고하며 대안 1·2 비교표를 제공, 소위의 신속한 의사결정을 지원.</p>
+      </div>
+    </div>
+  </div>
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">서울특별시 (오세훈 시장)</span>
+      <span class="stance-tag caution">종합관리계획 추진</span>
+    </div>
+    <p class="stance-text">전동킥보드·자전거·오토바이를 아우르는 보행환경 개선 종합계획을 수립 중이라고 국정감사에서 답변했습니다. 이후 2024년 국감(정동만 의원 질의)에서는 견인업체의 부정 위치이동·부당이득 문제가 드러나 실제 관리 실태에 허점이 있음이 확인됐습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 국정감사</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2020-10-20</span><q>지금 전동킥보드뿐만 아니라 자전거·오토바이까지 포함해서 보행환경 개선하려고 종합계획을 수립해서 추진하고 있고요. 몇 가지만 말씀드리면 일단 공유 PM 업체들하고…</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">한국교통안전공단</span>
+      <span class="stance-tag caution">사고 데이터 기반 관리 강화</span>
+    </div>
+    <p class="stance-text">이륜차·PM·오토바이 사고 급증에 관계부처 태스크포스로 대응 중이라고 답변(2022)했고, 2024년에는 전동킥보드 배터리 이력제·번호판 부착 필요성을 지적한 김희정 위원에게 공감을 표했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 국정감사</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2022-10-07</span><q>말씀하신 대로 관계부처와 협의해서 그렇게 하고 있고 지금 말씀하신 올해 사고가 두 바퀴 이륜차나 PM이나 오토바이에서는 굉장히 많이 발생하고 있습니다. 저희들도 태스크포스를 운영하는 데 노력을 하겠습니다.</q></div>
+    </div></details>
+  </div>
+
+</section>
+
+<!-- CATEGORY 7 -->
+<section class="cat">
+  <div class="cat-head">
+    <span class="cat-num">07</span>
+    <h2 class="cat-title">기타 — 재선 실패 / 의원직 상실</h2>
+    <span class="cat-desc">13명 · PM 스탠스는 있으나 현재 국회의원 아님</span>
+  </div>
+  <p class="note-inline">21대(또는 그 이전) 당시 국토위·법사위·행안위·국정감사에서 PM 법안을 논의했지만 22대 국회의원 명단에서 확인되지 않는 인물들입니다.</p>
+  <div class="compact-grid">
+    <div class="compact-card"><span class="cname">하영제</span><span class="cmeta">미래통합당 · 경남 사천남해하동 · 21대 초선 · 낙선</span></div>
+    <div class="compact-card"><span class="cname">조응천</span><span class="cmeta">더불어민주당 · 경기 남양주갑 · 20~21대 재선 · 22대 불출마/낙선</span></div>
+    <div class="compact-card"><span class="cname">전주혜</span><span class="cmeta">미래한국당 · 비례 · 21대 초선 · 낙선</span></div>
+    <div class="compact-card"><span class="cname">신영대</span><span class="cmeta">더불어민주당 · 전북 군산김제부안갑 · 21~22대 재선 · 의원직 상실</span></div>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김용판</span>
+      <span class="chip meta">미래통합당 · 대구 달서병 · 21대 초선</span>
+      <span class="stance-tag support">전면 규제 도입에 신중</span>
+    </div>
+    <p class="stance-text">전직 경찰 고위직 출신으로, 초임 경찰서장 시절 오토바이 헬멧 단속을 강하게 했다가 시골에서 큰 반발을 겪었던 경험을 들며 "취지는 좋지만 전면 도입은 국민 반발을 부를 수 있다"고 신중한 접근을 주문했습니다. 도로교통법상 "차마" 정의에서 PM의 법적 지위를 정밀하게 캐물으며 처벌 형평성 문제도 반복 제기했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 행정안전위원회</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2020-09-18 · 행안위 법안심사제2소위</span><q>제가 초임 경찰서장 때 오토바이 헬멧 단속을 강하게 했는데 그때 시골에서 어마어마하게 반발이 오고 그랬습니다. 이게 취지는 좋지만 우리나라 문화에서 아직까지 시골에서 나이 드신 분들 많이 타고 있는데 전면 도입은 엄청난 국민의 반발을…</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card" style="margin-top:14px;">
+    <div class="member-top">
+      <span class="member-name">박완수</span>
+      <span class="chip meta">미래통합당 · 경남 창원의창 · 21대 재선</span>
+      <span class="stance-tag mixed">행안위 소위원장 · 조정자</span>
+    </div>
+    <p class="stance-text">2020년 행안위 법안심사제2소위원장으로서 PM 관련 도로교통법 개정안 8건 심사를 직접 진행했습니다. "PM을 25㎞/h까지 할 수 있는 걸 조정해서 속도를 낮출 수는 있느냐"며 생산업체를 고려한 유예기간 도입을 함께 검토하는 등, 벌금·과태료 수위·헬멧 착용·속도 상한(25→20㎞/h) 등 거의 모든 쟁점에서 위원들 의견을 취합해 조정한 조정자 역할을 했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 행정안전위원회</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2020-12-02 · 행안위 법안심사제2소위원장</span><q>지금 PM을 25㎞/h까지 할 수 있는 걸 조정해서 속도를 낮출 수는 있는 겁니까? (…) 그러면 유예기간을 둬야 되겠지요, 생산하는 업체를 고려해 가지고.</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">오영환</span>
+      <span class="chip meta">더불어민주당 · 경기 의정부갑 · 21대 초선</span>
+      <span class="stance-tag inquiry">과학적 근거 요구</span>
+    </div>
+    <p class="stance-text">전직 소방관 출신으로, 속도 상한 조정(25→20㎞/h)의 타당성을 "25㎞와 20㎞에서 보행자에게 가해지는 충격량이 비슷하다"는 답변에 대해 정확한 근거 자료를 요구하며 감(感)이 아닌 데이터 기반 입법을 강조했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 행정안전위원회</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2020-12-02 · 행안위 법안심사제2소위</span><q>25㎞/h로 운행을 할 때와 20㎞/h로 할 때 보행자에게 가해지는 충격량에 관한 연구결과가 그렇게 나와 있거든요. 차장님 말씀은 25㎞/h나 20㎞/h나 비슷비슷하다고 하는데 (…) 정확히 답변할 수 있는 사람이 있어요, 뒤에?</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">양기대</span>
+      <span class="chip meta">더불어민주당 · 경기 광명을 · 21대 초선</span>
+      <span class="stance-tag inquiry">기술적 실현가능성 검증</span>
+    </div>
+    <p class="stance-text">속도 상한 조정이 기존에 생산된 PM 기기에도 소급 적용 가능한지, 즉 계기판으로 속도 조절이 가능한지를 실무적으로 캐물었습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 행정안전위원회</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2020-12-02 · 행안위 법안심사제2소위</span><q>25㎞/h 두더라도 20㎞/h까지만 다니게 하면 되는 거지요, 기 생산한 것도. (…) PM에 속도 조절이 가능한 그런 계기판이 설치되어 있습니까?</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">김웅</span>
+      <span class="chip meta">미래통합당 · 서울 송파갑 · 21대 초선</span>
+      <span class="stance-tag inquiry">입법 진행상황 확인</span>
+    </div>
+    <p class="stance-text">검사 출신으로, 개인형 이동장치 대여사업자 관련 기본법이 이미 "국토위를 통과해서 법사위에 계류 중"임을 2023년 시점에 직접 확인시켜 준 인물입니다. 모바일 운전면허증의 유심칩 교체를 통한 도용 가능성도 실연을 통해 지적했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 행정안전위원회</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2023-11-21 · 행안위 법안심사제2소위</span><q>내용을 포함한 개인형 이동장치 관련 기본법이 현재 국토위를 통과해서 법사위에 계류 중입니다. 그 내용들을 보시면 개인형 이동장치 대여사업의 등록, 개인형 이동장치 대여사업자의 준수사항 및 등록취소, 또 국토부장관에 대한 운전자격…</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">이성만</span>
+      <span class="chip meta">더불어민주당 · 인천 부평갑 · 21대 초선</span>
+      <span class="stance-tag inquiry">연령별 차등처벌 검토</span>
+    </div>
+    <p class="stance-text">연령대에 따라 처벌 수위를 차등화하는 방안의 합리성은 "여전히 검토 대상"이라고 짚었고, 최고속도·바퀴지름 제한 등 전문위원 검토의견에는 대체로 동의했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 행정안전위원회</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2022-11-23 · 행안위 법안심사제2소위</span><q>다만 앞에서 말씀드린 바와 동일하게 연령에 따라 차등화된 처벌이 합리적인가 하는 문제는 여전히 검토 대상이라고 하겠습니다.</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">이명수</span>
+      <span class="chip meta">국민의힘 계열 · 21대</span>
+      <span class="stance-tag inquiry">안전관리 확인</span>
+    </div>
+    <p class="stance-text">서울시 공유 킥보드 안전 문제와 관련해 "단속이나 도로교통법을 보완할 게 있는지 다시 살펴 제시해달라"고 짧게 확인하는 질의를 했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 행정안전위원회 국정감사</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2020-10-15</span><q>서울시에 보니까 공유 킥보드의 안전 이게 상당히… 단속이라든가 도로교통법을 보완할 게 있는지 다시 살피셔 가지고 그걸 제시해 주십시오.</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">최인호</span>
+      <span class="chip meta">더불어민주당 · 부산 사하갑 · 20~21대 재선</span>
+      <span class="stance-tag caution">지자체 단속 실효성 추궁</span>
+    </div>
+    <p class="stance-text">서울시 공유 전동킥보드(4.3만대)의 2년간 견인 건수가 12만9000건에 달한다는 통계를 근거로, 견인 건수가 평균의 2배인 강남·서초구가 오히려 "안전관리 서포터즈"를 운영하지 않는 모순을 지적했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 국정감사</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2023-10-23 · 국토교통위 국정감사</span><q>지금 서울 시내에 배치된 공유 전동킥보드 몇 대인지 아십니까? (…) 4만 3000대 정도 수준입니다. (…) 견인 건수가 2년 동안 12만 9000건이 넘어서고 (…) 강남구와 서초구가 (…) 평균보다 2배 이상씩 견인 건수가 높음에도 불구하고 이 서포터즈 운영을 안 하고 있습니다.</q></div>
+    </div></details>
+  </div>
+
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">유경준</span>
+      <span class="chip meta">미래통합당 · 서울 강남병 · 21대 초선</span>
+      <span class="stance-tag inquiry">간접 언급</span>
+    </div>
+    <p class="stance-text">최인호 위원의 전동킥보드 견인 문제 질의 바로 다음 순서 발언인데, "어린이 교통사고 안전"이라고만 언급해 PM을 직접 지칭하지는 않습니다. 같은 맥락일 가능성이 높지만 단정하기 어려워 참고용으로만 기록합니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 국정감사</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2023-10-23 · 국토교통위 국정감사</span><q>서울시에서 하여튼 중심이 되어 가지고 어린이들 교통사고에서 안전할 수 있도록 잘 조치해 주시기를 부탁드리겠습니다.</q></div>
+    </div></details>
+  </div>
+</section>
+
+</div><!-- /view-members -->
+
+<div id="view-bills" style="display:none;">
+
+<div class="scope-note" style="margin-bottom:20px;">
+  <b>기준일: 2026-07-31 · 총 47건</b> (PM 제정법률안 14 + 도로교통법·자전거법·자동차관리법 개정안 33). 검토보고서 원문은 자동 추출이 안 돼 제공하지 않으며, 카드의 <b>의안원문 보기</b>를 누르면 국회 의안정보시스템 원문 페이지로 이동합니다.
+</div>
+
+<h3 class="bill-section-h">PM 제정법률안 <span class="view-tab-count">14</span></h3>
+<div class="bill-card-list" id="bill-cards"></div>
+
+<h3 class="bill-section-h">관련 법 개정안 — 도로교통법 · 자전거법 · 자동차관리법 <span class="view-tab-count">33</span></h3>
+<p class="bill-section-note">사용자 제보 21건 + BPMBILLSUMMARY 전문 검색으로 확인한 11건. "간접"은 제안이유에 PM/개인형 이동장치 표현이 직접 등장하지 않는 2건입니다.</p>
+<div class="bill-card-list" id="bill-cards-amend"></div>
+
+</div><!-- /view-bills -->
+
+<footer style="border-top:1px solid var(--line);padding-top:20px;margin-top:10px;color:var(--ink-dim);font-size:12px;">
+  출처: 열린국회정보 Open API (회의록, 국회의원 인적사항, 의안정보) · 21~22대 국토교통위원회·법제사법위원회·행정안전위원회·국정감사 회의록 원문, 국회의원 통합 정보, 22대 의안정보 기준, 2026-07-30 스냅샷. 국토위 22대 전체 회의(인접의제 검색)는 현재 백그라운드로 처리 중이며 결과 확보 시 갱신됩니다.
+</footer>
+
+</div>
+
+<script>
+function pmSwitchView(view){
+  document.getElementById('view-members').style.display = (view==='members') ? '' : 'none';
+  document.getElementById('view-bills').style.display = (view==='bills') ? '' : 'none';
+  document.querySelectorAll('.view-tab').forEach(function(btn){
+    btn.classList.toggle('active', btn.getAttribute('data-view')===view);
+  });
+  window.scrollTo(0,0);
+}
+
+var PM_BILLS = [
+  {no:"DD20688", name:"개인형 이동장치의 안전 및 관리에 관한 법률안(대안)", proposer:"국토교통위원장", date:"2025-12-17", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_Z2J5C1I2I1X5C1H7O0E1I1Z2F9U7D4", summary:"12건 병합 최종안(위원회의결안 원문 31p 직접 확인). 대여업 등록제, 최고속도 하향, 나이 요건(시행령 위임)+대여 시 교육이수 확인을 골자로 함 — 운전면허·전용면허 조항은 없음. 도로교통법보다 이 법을 우선 적용(제4조), 대중교통 연계 거치대·주차시설 확충, 대여사업자단체 설립 근거도 포함.", stage:"소관위 심사중", stageDetail:"국토위 교통법안심사소위에서 계속 협의 중(2026-04-29 소위 의결, 전체회의 상정 대기) — 위원회 대안은 API 미색인이라 likms 원문으로 직접 확인함.", stageClass:"pending"},
+  {no:"2216647", name:"개인형 이동장치의 안전 및 이용 활성화에 관한 법률안", proposer:"이연희의원 등 15인", date:"2026-02-06", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_R2P6Q0X2Y0X5V1V0U3U8C2D9P4Q4Y2", summary:"번호판 부착 단계적 의무화 + 별도 운전자격 제도 신설 — 12건 병합 이후 가장 최근 재발의된 안.", stage:"소관위 접수", stageDetail:"2026-02-09 소관위 회부, 아직 상정 전.", stageClass:"pending"},
+  {no:"2214414", name:"개인형 이동수단의 안전 및 이용 활성화에 관한 법률안", proposer:"한정애의원 등 11인", date:"2025-11-19", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_V2D5E1C1D1B9B1A5B4W3X2V2U3U1S1", summary:"속도위반 형사처벌 조항을 포함한 표준형 — 등록제·주차·안전요건 등을 두루 규정.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2214255", name:"개인형 이동수단의 안전관리 및 운영에 관한 법률안", proposer:"김성원의원 등 10인", date:"2025-11-14", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_H2F5G1N1M1M3L1L0K3K1G1G0F9D7E5", summary:"도시·군계획, 교통정비계획 등 각종 도시계획에 PM을 제도권 편입 — 도시계획 연계를 특히 강조.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2214225", name:"개인형 이동장치의 안전·관리 및 이용활성화 등에 관한 법률안", proposer:"송석준의원 등 11인", date:"2025-11-13", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_J2R5S0Q3R1P3P1O6K3K7I4J2I8I6G3", summary:"PM 전용도로 지정, 16세 미만 운행금지, 대여사업자 책임보험 의무화 등 조항이 가장 많은 포괄형.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2214083", name:"개인형 이동수단의 안전 및 이용 활성화에 관한 법률안", proposer:"정점식의원 등 13인", date:"2025-11-10", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_T2T5S1S1R0R3Z1Z0Y0W8X0V5W2S6S5", summary:"주차구역 지정 시 경찰 사전협의 절차, 이용시설 설치비 국고보조 조항을 갖춘 표준형.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2213974", name:"개인형 이동수단의 안전 및 관리에 관한 법률안", proposer:"정일영의원 등 13인", date:"2025-11-06", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_G2H5F1F1E0A5A1Y6Z2X4Y1W4X7F2F6", summary:"국민권익위 '민원주의보'(3년간 민원 2.7만건)를 배경으로 명시, 산업·기술혁신(자율주행·배터리) 지원까지 포괄.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2213771", name:"개인형 이동수단의 안전 및 이용 활성화에 관한 법률안", proposer:"윤준병의원 등 10인", date:"2025-10-29", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_V2U5T0T9Q1O8N1L2U3V8T2S3Q4Y9Z7", summary:"대여업 표준약관·공정거래위 협의 조항, 사업정지 대신 과징금(3천만원 이하) 부과 규정이 특징.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2213026", name:"개인형 이동수단의 안전 및 관리에 관한 법률안", proposer:"복기왕·권영진의원 등 20인", date:"2025-09-16", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_Y2W5F0G9E1D5C2J0V3T9S3O4N9O8M0", summary:"국민권익위 민원주의보를 근거로 제시, 기술혁신·산업진흥(친환경 배터리, 자율주행) 조항을 포함한 종합형.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2212495", name:"개인형 이동수단의 안전 및 이용 활성화에 관한 법률안", proposer:"김은혜의원 등 16인", date:"2025-08-28", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_P2N5N0J8K2I7J1H5F3G4O2P3N5N7L9", summary:"식별번호·부착표지 의무화 + 소유자·대여사업자 책임보험 가입 의무화가 특징.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2212392", name:"개인형 이동수단의 안전 및 이용 활성화에 관한 법률안", proposer:"황운하의원 등 11인", date:"2025-08-26", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_L2J5R0S7Q0Q1P1Q0O5O3K1J5J6H8I3", summary:"등록제·주차·안전요건 등 표준 조항으로 구성된 순수 기본법 형태.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2210310", name:"개인형 이동수단의 안전 및 이용 활성화에 관한 법률안", proposer:"정준호의원 등 10인", date:"2025-05-01", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_R2S5R0P3Y1W9V0W8U4D4B1A7A7Z0V2", summary:"대여사업자협회 설립 근거를 포함한 표준형.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2201222", name:"개인형 이동수단의 안전 및 이용 활성화에 관한 법률안", proposer:"박성민의원 등 10인", date:"2024-07-01", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_I2I4H0N6M1L4K1T7S3R6X0X0W9E2D2", summary:"공영 대여사업 근거 마련 + 운전자격확인시스템 도입을 규정한 초기 표준형.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+  {no:"2201010", name:"개인형 이동수단의 안전 및 이용 활성화에 관한 법률안", proposer:"홍기원의원 등 10인", date:"2024-06-27", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_G2P4O0M6L1S4R1Q6M3K7K5I0R9Q1P0", summary:"이 클러스터의 최초 발의안 — 이후 나온 PM기본법들의 표준 조항 구성의 원형.", stage:"소관위 대안반영폐기 · 2025-12-17", stageDetail:"소관 상임위(국토교통위원회)에서 대안반영폐기 처리됨.", stageClass:"merged"},
+];
+
+var PM_AMENDMENTS = [
+  {no:"2201248", name:"자전거 이용 활성화에 관한 법률 일부개정법률안", proposer:"박성민의원 등 10인", date:"2024-07-01", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_D2M4K0I5J3I1Y1X7K3J2E1F8E5D0B0", summary:"PM기본법 제정으로 전동자전거가 개인형 이동장치에서 빠진 데 따른 후속조치 — 전동자전거를 자전거로 재편입, 자전거 대여업 신고제 도입.", stage:"소관위 심사중", stageDetail:"2024-11-20 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2201784", name:"도로교통법 일부개정법률안", proposer:"조인철의원 등 14인", date:"2024-07-16", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_N2U4V0T7U1S0R1R6N4O5M0M5K2J1K8", summary:"오토바이 폭주족 등 공동위험행위·난폭운전 처벌 상향(개인형 이동장치는 적용대상에서 제외 — 간접 관련).", stage:"소관위 심사중", stageDetail:"2024-11-20 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2202673", name:"도로교통법 일부개정법률안", proposer:"임호선의원 등 10인", date:"2024-08-08", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_E2C4B0C7A2J4H1G0F0G0V3U4S7A4Z0", summary:"대여 시 운전자격 확인 의무화(위반 시 과태료 500만원) + 최고속도 25→20km/h 하향.", stage:"소관위 심사중", stageDetail:"2024-11-20 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2202939", name:"도로교통법 일부개정법률안", proposer:"이병진의원 등 10인", date:"2024-08-19", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_J2R4R0Q7R1P5P1O0W1W5V4V9T0S2T6", summary:"대여사업자의 운전자격 확인 의무화, 위반 시 과태료 500만원(어린이 무면허 운전 방지 목적).", stage:"소관위 심사중", stageDetail:"2024-11-20 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2202937", name:"도로교통법 일부개정법률안", proposer:"이춘석의원 등 10인", date:"2024-08-19", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_O2W4W0V8V1T2U1S1A0B6Z1A8Y9Y4X0", summary:"원동기장치자전거 무면허운전 처벌을 자동차 수준으로 상향 — PM을 특정하지 않은 일반 조항(간접 관련).", stage:"소관위 심사중", stageDetail:"2024-11-20 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"indirect"},
+  {no:"2203982", name:"도로교통법 일부개정법률안", proposer:"모경종의원 등 11인", date:"2024-09-12", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_A2B4Z0Z9W0U9U0T9T2R8S3A5B6Z9X7", summary:"대여 시 운전자격 확인 의무화 + 보도 무단방치 과태료 규정 보완.", stage:"소관위 심사중", stageDetail:"2024-11-20 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2204284", name:"도로교통법 일부개정법률안", proposer:"한정애의원 등 10인", date:"2024-09-25", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_E2C4C0B9C1A1A1W1W5V5V4U0S3T6A6", summary:"자전거·PM('자전거등')에도 공동위험행위(폭주 집단주행) 금지·처벌 조항 신설.", stage:"소관위 심사중", stageDetail:"2024-11-20 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2204364", name:"도로교통법 일부개정법률안", proposer:"조인철의원 등 19인", date:"2024-09-26", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_Y2G4F0F8D1E6D1D5L5J9K1I9J5H0I3", summary:"최고속도 25→20km/h 하향 + 운전자격 확인 의무화 + 주차금지구역 방치 시 대여업자 조치의무.", stage:"소관위 심사중", stageDetail:"2024-11-20 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2204647", name:"도로교통법 일부개정법률안", proposer:"정동만의원 등 10인", date:"2024-10-10", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_X2W4W0S9S0R2S1Q8Q0O8X5X4V7W5V4", summary:"PM 전용 면허 신설 + 대여 시 운전자격확인시스템 구축 의무화.", stage:"소관위 접수", stageDetail:"2024-10-11 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2204933", name:"도로교통법 일부개정법률안", proposer:"김영배의원 등 13인", date:"2024-10-28", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_D2L4L0J8L0J8J0H9I2Q7O3P5N1O6M2", summary:"승차정원 초과 운전 처벌 상향(20만원→50만원) — 일산 공원 사망사고가 계기.", stage:"소관위 심사중", stageDetail:"2025-02-18 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2207879", name:"도로교통법 일부개정법률안", proposer:"이정문의원 등 17인", date:"2025-02-03", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_F2E5C0D1B1C3K0K9J3H5I5G6H4P6P3", summary:"약물(마약 등) 운전 처벌 강화 — 개인형 이동장치는 적용대상에서 제외된 일반 조항(간접 관련).", stage:"본회의 대안반영폐기 · 2025-03-13", stageDetail:"본회의에서 대안반영폐기 처리됨.", stageClass:"merged", srcTag:"keyword"},
+  {no:"2207885", name:"자전거 이용 활성화에 관한 법률 일부개정법률안", proposer:"박성훈의원 등 12인", date:"2025-02-04", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_I2G5H0O1P1O6M1M1K1M6T4U3S6R8R0", summary:"자전거 전용도로 확충을 활성화계획에 우선 반영하도록 규정(PM 직접 언급 없음, 간접 관련).", stage:"소관위 심사중", stageDetail:"2025-07-01 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"indirect"},
+  {no:"2208068", name:"도로교통법 일부개정법률안", proposer:"박덕흠의원 등 10인", date:"2025-02-11", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_X2Y5W0W2E0D7D1C7C5B9B5J3I7I7G1", summary:"대여 시 운전자격 확인 의무화, 위반 시 과태료 500만원.", stage:"소관위 접수", stageDetail:"2025-02-12 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2211157", name:"도로교통법 일부개정법률안", proposer:"김태호의원 등 12인", date:"2025-06-30", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_X2W5W0U6V1D1B1C4A3B2Z2A8H5G8H3", summary:"경찰청 운전면허확인서비스와 연계한 운전자격확인시스템 구축 의무화.", stage:"소관위 접수", stageDetail:"2025-07-01 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2213637", name:"도로교통법 일부개정법률안", proposer:"김정호의원 등 10인", date:"2025-10-17", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_O2M5J1J0H1I6G1H5F4G7N5O4N1L3L6", summary:"대여 시 운전자격확인시스템 구축 의무화 — 청소년 야간 무자격 운행 문제가 배경.", stage:"소관위 접수", stageDetail:"2025-10-20 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2213780", name:"도로교통법 일부개정법률안", proposer:"정성국의원 등 13인", date:"2025-10-29", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_D2E5C1C0B2B8J0I9I2G5H4F7G4C9C0", summary:"인천 무면허 사고 사례를 계기로 나이·면허 확인 의무화 + 청소년보호법 준용 벌칙 신설.", stage:"소관위 접수", stageDetail:"2025-10-30 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2213832", name:"도로교통법 일부개정법률안", proposer:"김소희의원 등 10인", date:"2025-10-31", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_S2R5Z1Z0X2Y9X2X2W2R4S5Q9R3P1Q8", summary:"개인형 이동장치 정의·관련 조항을 전면 삭제 — 도로 운행 자체를 금지하는 가장 강경한 안.", stage:"소관위 심사중", stageDetail:"2026-02-05 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2213863", name:"도로교통법 일부개정법률안", proposer:"이훈기의원 등 10인", date:"2025-11-03", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_H2D5E1C0C2A8B1A1A0I6H1H1F1G4F2", summary:"어린이보호구역 등 지역·구간별 차등 속도제한 근거 마련.", stage:"소관위 심사중", stageDetail:"2026-02-05 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2213883", name:"자전거 이용 활성화에 관한 법률 일부개정법률안", proposer:"이훈기의원 등 11인", date:"2025-11-04", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_A2A5Y1Z0H2F8G1E1F0D5E3M4M5K3L0", summary:"자전거도로 내 PM 통행 안전 확보 방안을 자전거 활성화계획에 포함하는 근거 마련.", stage:"소관위 심사중", stageDetail:"2026-02-05 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2214381", name:"도로교통법 일부개정법률안", proposer:"김정호의원 등 11인", date:"2025-11-19", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_Z2A5I1J1H1H2G1G0F3A5B1Z6A1Y9Z5", summary:"최고속도 25→10km/h로 대폭 하향 + 보도통행 원칙 전환(2025-12-19 철회됨).", stage:"본회의 철회 · 2025-11-28", stageDetail:"본회의에서 철회 처리됨.", stageClass:"withdrawn", srcTag:"keyword"},
+  {no:"2214383", name:"자전거 이용 활성화에 관한 법률 일부개정법률안", proposer:"김정호의원 등 11인", date:"2025-11-19", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_U2S5T1R1R1Q2Y1Y0W3X6V4W8U9V4D0", summary:"PM을 자전거 무단방치 금지 대상('자전거등')에 포함, 위반 시 과태료 20만원.", stage:"소관위 심사중", stageDetail:"2026-02-05 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2214382", name:"자동차관리법 일부개정법률안", proposer:"김정호의원 등 12인", date:"2025-11-19", committee:"국토교통위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_F2F5E1E1D1D2L1M0K3I6J2I5I2Q7Q7", summary:"대여사업자 소유 PM에 번호판 부착 의무화 — 일본·독일·싱가포르 사례 참고.", stage:"소관위 심사중", stageDetail:"2026-02-10 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2214692", name:"도로교통법 일부개정법률안", proposer:"김병주의원 등 11인", date:"2025-11-28", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_V2U5V1T1T2R6A0A9Y4Z8Y3Y9W1X2F1", summary:"속도 하향 근거 + 운전자격 확인 의무화 + 음주운전 처벌을 자동차 수준으로 상향, 종합 개정.", stage:"소관위 접수", stageDetail:"2025-12-01 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2215206", name:"도로교통법 일부개정법률안", proposer:"김소희의원 등 16인", date:"2025-12-12", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_I2G5G1F2F1D1M0M9K2L2J1K6I6J6R5", summary:"학교·공원 등 지역에서 조례로 PM 통행 제한·금지구역을 지정할 수 있도록 함.", stage:"소관위 심사중", stageDetail:"2026-02-05 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2215450", name:"도로교통법 일부개정법률안", proposer:"서일준의원 등 11인", date:"2025-12-19", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_K2L5J1I2J1Q5R1P6P2O3P2N6O0V0W3", summary:"무면허 운전 처벌에 징역형(6개월 이하)을 신설 — 처벌 수위 상향.", stage:"소관위 심사중", stageDetail:"2026-02-05 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2215874", name:"도로교통법 일부개정법률안", proposer:"김상훈의원 등 12인", date:"2026-01-06", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_G2H5F1E0E2C8D1Z9A5Y6Y1X4V0W2E4", summary:"도로 구간별 속도제한 근거 신설 + 위반 시 처벌 조항 추가.", stage:"소관위 접수", stageDetail:"2026-01-07 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2215923", name:"도로교통법 일부개정법률안", proposer:"김정호의원 등 10인", date:"2026-01-08", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_L2J6I0J1Q0R5P1Q4O0P1N5V0W1U3U7", summary:"최고속도 20km/h 하향 + 보도통행 원칙 전환 + 대여업자 방치 관리책임 강화.", stage:"소관위 접수", stageDetail:"2026-01-09 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2216141", name:"도로교통법 일부개정법률안", proposer:"김희정의원 등 11인", date:"2026-01-19", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_Q2R6Q0Q1O0P5N0O9W0U7V5T2T9S9T4", summary:"개인형 이동장치의 종류(전동킥보드·전동이륜평행차 등)를 법률에 구체적으로 명시.", stage:"소관위 심사중", stageDetail:"2026-03-10 상임위 상정, 소위 심사중.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2219322", name:"도로교통법 일부개정법률안", proposer:"서명옥의원 등 10인", date:"2026-06-18", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_L2J6K0I4J2H8P1Q1O2P8N1O1M7U8U7", summary:"음주운전 기준 강화(0.03%→0.02%) + PM 음주운전을 자동차와 동일 수준으로 처벌.", stage:"소관위 접수", stageDetail:"2026-07-01 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2219510", name:"도로교통법 일부개정법률안", proposer:"김종양의원 등 10인", date:"2026-06-25", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_A2B6J0K6I1H9H1F1G3O1P3N3L1M2K6", summary:"대여용 PM 무단방치 시 대여사업자의 수거조치 의무화.", stage:"소관위 접수", stageDetail:"2026-07-01 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2219599", name:"도로교통법 일부개정법률안", proposer:"이재관의원 등 11인", date:"2026-06-29", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_S2T6R0S4Q1R4Z1X5X1W5X1V8V2E9C3", summary:"제동장치 없는 픽시자전거의 어린이 운전을 보호자 책임으로 금지(PM 직접 규율 아님, 간접 관련).", stage:"소관위 접수", stageDetail:"2026-07-01 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2219714", name:"도로교통법 일부개정법률안", proposer:"김태호의원 등 10인", date:"2026-07-02", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_N2N6J0K2I0J3H1I7G4O1P5N3O8M5M9", summary:"어린이보호구역 내 자전거·PM 주정차 특례를 폐지.", stage:"소관위 접수", stageDetail:"2026-07-03 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"keyword"},
+  {no:"2220225", name:"자전거 이용 활성화에 관한 법률 일부개정법률안", proposer:"박정현의원 등 12인", date:"2026-07-29", committee:"행정안전위원회", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_U2S6S0A6B1Z7A1Y3X4X4T4U2S8S5R7", summary:"무단방치 자전거 처분 요건 완화(조례 지정 장소 확대, '통행방해' 요건 삭제) — 자전거 한정, PM 직접 언급 없음(간접 관련).", stage:"소관위 접수", stageDetail:"2026-07-30 소관위 회부, 아직 상정 전.", stageClass:"pending", srcTag:"indirect"},
+];
+
+(function renderBills(){
+  function abbrevCommittee(c) {
+    return c.replace('행정안전위원회', '행안위').replace('국토교통위원회', '국토위');
+  }
+  function shortDate(d) {
+    return d.replace(/(\d{4})-(\d{2})-(\d{2})/g, function(_, y, m, day){ return y.slice(2) + '.' + m + '.' + day + '.'; });
+  }
+
+  function card(b, showCommittee) {
+    return '' +
+      '<div class="bill-card2">' +
+        '<div class="bc-top">' +
+          '<span class="bc-name">[' + b.no + '] ' + b.name + (b.srcTag==='indirect' ? '<span class="ind">간접</span>' : '') + '</span>' +
+          '<span class="st ' + b.stageClass + '">' + shortDate(b.stage) + '</span>' +
+        '</div>' +
+        '<div class="bc-meta">대표발의 <b>' + b.proposer.replace(/의원 등/, ' 등') + '</b> · 제안일 ' + shortDate(b.date) +
+          (showCommittee ? ' · 소관위 ' + abbrevCommittee(b.committee) : '') + '</div>' +
+        '<p class="bc-summary">' + b.summary + '</p>' +
+        (b.stageDetail ? '<p class="bc-stage-detail">' + shortDate(b.stageDetail) + '</p>' : '') +
+        '<a class="bc-link" href="' + b.link + '" target="_blank" rel="noopener">의안원문 보기 ↗</a>' +
+      '</div>';
+  }
+
+  document.getElementById('bill-cards').innerHTML = PM_BILLS.map(function(b){ return card(b, false); }).join('');
+  document.getElementById('bill-cards-amend').innerHTML = PM_AMENDMENTS.map(function(b){ return card(b, true); }).join('');
+})();
+</script>
