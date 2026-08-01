@@ -1,0 +1,250 @@
+{
+  "강대식": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "강득구": {
+    "committee": "기후위기 특별위원회, 국토교통위원회",
+    "active": true
+  },
+  "고동진": {
+    "committee": "외교통일위원회",
+    "active": true
+  },
+  "김교흥": {
+    "committee": "보건복지위원회, 예산결산특별위원회",
+    "active": true
+  },
+  "김남근": {
+    "committee": "국토교통위원회, 성평등가족위원회, 예산결산특별위원회",
+    "active": true
+  },
+  "김미애": {
+    "committee": "국토교통위원회, 국회운영위원회",
+    "active": true
+  },
+  "김상훈": {
+    "committee": "재정경제기획위원회",
+    "active": true
+  },
+  "김성원": {
+    "committee": "산업통상자원중소벤처기업위원회",
+    "active": true
+  },
+  "김성회": {
+    "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 기후위기 특별위원회, 국방위원회, 국회운영위원회, 예산결산특별위원회, 제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회",
+    "active": true
+  },
+  "김영배": {
+    "committee": "제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회, 행정안전위원회",
+    "active": true
+  },
+  "김은혜": {
+    "committee": "제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회, 국토교통위원회",
+    "active": true
+  },
+  "김정재": {
+    "committee": "국토교통위원회, 성평등가족위원회",
+    "active": true
+  },
+  "김종양": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "김희정": {
+    "committee": "국무총리(한성숙) 임명동의에 관한 인사청문특별위원회, 교육위원회",
+    "active": true
+  },
+  "맹성규": {
+    "committee": "외교통일위원회",
+    "active": true
+  },
+  "모경종": {
+    "committee": "연금개혁 특별위원회, 국토교통위원회",
+    "active": true
+  },
+  "문정복": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "문진석": {
+    "committee": "재정경제기획위원회",
+    "active": true
+  },
+  "민홍철": {
+    "committee": "국방위원회",
+    "active": true
+  },
+  "박상혁": {
+    "committee": "정무위원회",
+    "active": true
+  },
+  "박성민": {
+    "committee": "산업통상자원중소벤처기업위원회",
+    "active": true
+  },
+  "박형수": {
+    "committee": "법제사법위원회",
+    "active": true
+  },
+  "배준영": {
+    "committee": "예산결산특별위원회, 재정경제기획위원회",
+    "active": true
+  },
+  "복기왕": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "부승찬": {
+    "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 국토교통위원회",
+    "active": true
+  },
+  "서범수": {
+    "committee": "기후위기 특별위원회, 제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회, 교육위원회",
+    "active": true
+  },
+  "서영교": {
+    "committee": "법제사법위원회",
+    "active": true
+  },
+  "손명수": {
+    "committee": "정무위원회",
+    "active": true
+  },
+  "송기헌": {
+    "committee": "과학기술정보방송통신위원회",
+    "active": true
+  },
+  "송석준": {
+    "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 외교통일위원회",
+    "active": true
+  },
+  "송언석": {
+    "committee": "예산결산특별위원회, 정무위원회",
+    "active": true
+  },
+  "신성범": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "안태준": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "엄태영": {
+    "committee": "국토교통위원회, 예산결산특별위원회",
+    "active": true
+  },
+  "염태영": {
+    "committee": "기후위기 특별위원회, 국토교통위원회",
+    "active": true
+  },
+  "유상범": {
+    "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 국토교통위원회, 예산결산특별위원회",
+    "active": true
+  },
+  "유의동": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "윤종군": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "윤종오": {
+    "committee": "국토교통위원회, 국회운영위원회",
+    "active": true
+  },
+  "윤준병": {
+    "committee": "농림축산식품해양수산위원회",
+    "active": true
+  },
+  "이만희": {
+    "committee": "보건복지위원회",
+    "active": true
+  },
+  "이연희": {
+    "committee": "과학기술정보방송통신위원회, 성평등가족위원회, 예산결산특별위원회",
+    "active": true
+  },
+  "이용선": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "이해식": {
+    "committee": "제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회, 행정안전위원회",
+    "active": true
+  },
+  "임호선": {
+    "committee": "예산결산특별위원회, 행정안전위원회",
+    "active": true
+  },
+  "장경태": {
+    "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 국토교통위원회",
+    "active": true
+  },
+  "장종태": {
+    "committee": "국토교통위원회, 국회운영위원회",
+    "active": true
+  },
+  "전용기": {
+    "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회, 국토교통위원회, 국회운영위원회",
+    "active": true
+  },
+  "정동만": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "정일영": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "정점식": {
+    "committee": "국회운영위원회, 외교통일위원회, 정보위원회",
+    "active": true
+  },
+  "정준호": {
+    "committee": "문화체육관광위원회, 예산결산특별위원회",
+    "active": true
+  },
+  "정희용": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "조인철": {
+    "committee": "국토교통위원회, 예산결산특별위원회",
+    "active": true
+  },
+  "진성준": {
+    "committee": "국방위원회",
+    "active": true
+  },
+  "천준호": {
+    "committee": "국방위원회, 국회운영위원회",
+    "active": true
+  },
+  "한정애": {
+    "committee": "외교통일위원회",
+    "active": true
+  },
+  "한준호": {
+    "committee": "과학기술정보방송통신위원회",
+    "active": true
+  },
+  "허영": {
+    "committee": "국토교통위원회, 예산결산특별위원회",
+    "active": true
+  },
+  "홍기원": {
+    "committee": "외교통일위원회",
+    "active": true
+  },
+  "황운하": {
+    "committee": "국토교통위원회",
+    "active": true
+  },
+  "황희": {
+    "committee": "국토교통위원회",
+    "active": true
+  }
+}

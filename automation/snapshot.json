@@ -1,0 +1,509 @@
+{
+  "bills": {
+    "DD20688": {
+      "name": "개인형 이동장치의 안전 및 관리에 관한 법률안(대안)",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_Z2J5C1I2I1X5C1H7O0E1I1Z2F9U7D4",
+      "seen_conf_ids": [
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2216647": {
+      "name": "개인형 이동장치의 안전 및 이용 활성화에 관한 법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_R2P6Q0X2Y0X5V1V0U3U8C2D9P4Q4Y2",
+      "seen_conf_ids": [
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2214414": {
+      "name": "개인형 이동수단의 안전 및 이용 활성화에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_V2D5E1C1D1B9B1A5B4W3X2V2U3U1S1",
+      "seen_conf_ids": [
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2214255": {
+      "name": "개인형 이동수단의 안전관리 및 운영에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_H2F5G1N1M1M3L1L0K3K1G1G0F9D7E5",
+      "seen_conf_ids": [
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2214225": {
+      "name": "개인형 이동장치의 안전·관리 및 이용활성화 등에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_J2R5S0Q3R1P3P1O6K3K7I4J2I8I6G3",
+      "seen_conf_ids": [
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2214083": {
+      "name": "개인형 이동수단의 안전 및 이용 활성화에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_T2T5S1S1R0R3Z1Z0Y0W8X0V5W2S6S5",
+      "seen_conf_ids": [
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2213974": {
+      "name": "개인형 이동수단의 안전 및 관리에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_G2H5F1F1E0A5A1Y6Z2X4Y1W4X7F2F6",
+      "seen_conf_ids": [
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2213771": {
+      "name": "개인형 이동수단의 안전 및 이용 활성화에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_V2U5T0T9Q1O8N1L2U3V8T2S3Q4Y9Z7",
+      "seen_conf_ids": [
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2213026": {
+      "name": "개인형 이동수단의 안전 및 관리에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_Y2W5F0G9E1D5C2J0V3T9S3O4N9O8M0",
+      "seen_conf_ids": [
+        "N053750",
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2212495": {
+      "name": "개인형 이동수단의 안전 및 이용 활성화에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_P2N5N0J8K2I7J1H5F3G4O2P3N5N7L9",
+      "seen_conf_ids": [
+        "N053750",
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2212392": {
+      "name": "개인형 이동수단의 안전 및 이용 활성화에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_L2J5R0S7Q0Q1P1Q0O5O3K1J5J6H8I3",
+      "seen_conf_ids": [
+        "N053750",
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2210310": {
+      "name": "개인형 이동수단의 안전 및 이용 활성화에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_R2S5R0P3Y1W9V0W8U4D4B1A7A7Z0V2",
+      "seen_conf_ids": [
+        "N053231",
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2201222": {
+      "name": "개인형 이동수단의 안전 및 이용 활성화에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_I2I4H0N6M1L4K1T7S3R6X0X0W9E2D2",
+      "seen_conf_ids": [
+        "053993",
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2201010": {
+      "name": "개인형 이동수단의 안전 및 이용 활성화에 관한 법률안",
+      "stage": "소관위 대안반영폐기",
+      "bill_id": "PRC_G2P4O0M6L1S4R1Q6M3K7K5I0R9Q1P0",
+      "seen_conf_ids": [
+        "053993",
+        "N053825",
+        "N053864",
+        "N053875",
+        "N054208",
+        "N054233"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2201248": {
+      "name": "자전거 이용 활성화에 관한 법률 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_D2M4K0I5J3I1Y1X7K3J2E1F8E5D0B0",
+      "seen_conf_ids": [
+        "054442"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2201784": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_N2U4V0T7U1S0R1R6N4O5M0M5K2J1K8",
+      "seen_conf_ids": [
+        "054442"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2202673": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_E2C4B0C7A2J4H1G0F0G0V3U4S7A4Z0",
+      "seen_conf_ids": [
+        "054442"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2202939": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_J2R4R0Q7R1P5P1O0W1W5V4V9T0S2T6",
+      "seen_conf_ids": [
+        "054442"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2202937": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_O2W4W0V8V1T2U1S1A0B6Z1A8Y9Y4X0",
+      "seen_conf_ids": [
+        "054442"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2203982": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_A2B4Z0Z9W0U9U0T9T2R8S3A5B6Z9X7",
+      "seen_conf_ids": [
+        "054442"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2204284": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_E2C4C0B9C1A1A1W1W5V5V4U0S3T6A6",
+      "seen_conf_ids": [
+        "054442"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2204364": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_Y2G4F0F8D1E6D1D5L5J9K1I9J5H0I3",
+      "seen_conf_ids": [
+        "054442"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2204647": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_X2W4W0S9S0R2S1Q8Q0O8X5X4V7W5V4",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2204933": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_D2L4L0J8L0J8J0H9I2Q7O3P5N1O6M2",
+      "seen_conf_ids": [
+        "054792"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2207879": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "본회의 대안반영폐기 · 2025-03-13",
+      "bill_id": "PRC_F2E5C0D1B1C3K0K9J3H5I5G6H4P6P3",
+      "seen_conf_ids": [
+        "054786",
+        "054806"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2207885": {
+      "name": "자전거 이용 활성화에 관한 법률 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_I2G5H0O1P1O6M1M1K1M6T4U3S6R8R0",
+      "seen_conf_ids": [
+        "N053094"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2208068": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_X2Y5W0W2E0D7D1C7C5B9B5J3I7I7G1",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2211157": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_X2W5W0U6V1D1B1C4A3B2Z2A8H5G8H3",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2213637": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_O2M5J1J0H1I6G1H5F4G7N5O4N1L3L6",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2213780": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_D2E5C1C0B2B8J0I9I2G5H4F7G4C9C0",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2213832": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_S2R5Z1Z0X2Y9X2X2W2R4S5Q9R3P1Q8",
+      "seen_conf_ids": [
+        "N053958"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2213863": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_H2D5E1C0C2A8B1A1A0I6H1H1F1G4F2",
+      "seen_conf_ids": [
+        "N053958"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2213883": {
+      "name": "자전거 이용 활성화에 관한 법률 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_A2A5Y1Z0H2F8G1E1F0D5E3M4M5K3L0",
+      "seen_conf_ids": [
+        "N053958"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2214381": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "본회의 철회 · 2025-11-28",
+      "bill_id": "PRC_Z2A5I1J1H1H2G1G0F3A5B1Z6A1Y9Z5",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2214383": {
+      "name": "자전거 이용 활성화에 관한 법률 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_U2S5T1R1R1Q2Y1Y0W3X6V4W8U9V4D0",
+      "seen_conf_ids": [
+        "N053958"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2214382": {
+      "name": "자동차관리법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_F2F5E1E1D1D2L1M0K3I6J2I5I2Q7Q7",
+      "seen_conf_ids": [
+        "N053963"
+      ],
+      "committee": "국토교통위원회"
+    },
+    "2214692": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_V2U5V1T1T2R6A0A9Y4Z8Y3Y9W1X2F1",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2215206": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_I2G5G1F2F1D1M0M9K2L2J1K6I6J6R5",
+      "seen_conf_ids": [
+        "N053958"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2215450": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_K2L5J1I2J1Q5R1P6P2O3P2N6O0V0W3",
+      "seen_conf_ids": [
+        "N053958"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2215874": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_G2H5F1E0E2C8D1Z9A5Y6Y1X4V0W2E4",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2215923": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_L2J6I0J1Q0R5P1Q4O0P1N5V0W1U3U7",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2216141": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 심사중",
+      "bill_id": "PRC_Q2R6Q0Q1O0P5N0O9W0U7V5T2T9S9T4",
+      "seen_conf_ids": [
+        "N054025"
+      ],
+      "committee": "행정안전위원회"
+    },
+    "2219322": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_L2J6K0I4J2H8P1Q1O2P8N1O1M7U8U7",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2219510": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_A2B6J0K6I1H9H1F1G3O1P3N3L1M2K6",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2219599": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_S2T6R0S4Q1R4Z1X5X1W5X1V8V2E9C3",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2219714": {
+      "name": "도로교통법 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_N2N6J0K2I0J3H1I7G4O1P5N3O8M5M9",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    },
+    "2220225": {
+      "name": "자전거 이용 활성화에 관한 법률 일부개정법률안",
+      "stage": "소관위 접수",
+      "bill_id": "PRC_U2S6S0A6B1Z7A1Y3X4X4T4U2S8S5R7",
+      "seen_conf_ids": [],
+      "committee": "행정안전위원회"
+    }
+  },
+  "last_full_scan": "2026-07-31",
+  "known_bill_nos": [
+    "DD20688",
+    "2216647",
+    "2214414",
+    "2214255",
+    "2214225",
+    "2214083",
+    "2213974",
+    "2213771",
+    "2213026",
+    "2212495",
+    "2212392",
+    "2210310",
+    "2201222",
+    "2201010",
+    "2201248",
+    "2201784",
+    "2202673",
+    "2202939",
+    "2202937",
+    "2203982",
+    "2204284",
+    "2204364",
+    "2204647",
+    "2204933",
+    "2207879",
+    "2207885",
+    "2208068",
+    "2211157",
+    "2213637",
+    "2213780",
+    "2213832",
+    "2213863",
+    "2213883",
+    "2214381",
+    "2214383",
+    "2214382",
+    "2214692",
+    "2215206",
+    "2215450",
+    "2215874",
+    "2215923",
+    "2216141",
+    "2219322",
+    "2219510",
+    "2219599",
+    "2219714",
+    "2220225"
+  ],
+  "last_meeting_scan": "2026-05-12",
+  "seen_schedule_keys": []
+}
