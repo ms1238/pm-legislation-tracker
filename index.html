@@ -384,6 +384,7 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
 <div class="view-tabs" role="tablist">
   <button class="view-tab active" data-view="members" onclick="pmSwitchView('members')">국회의원·기관 현황</button>
   <button class="view-tab" data-view="bills" onclick="pmSwitchView('bills')">관련 법 현황 <span class="view-tab-count">47</span></button>
+  <button class="view-tab" data-view="sublaws" onclick="pmSwitchView('sublaws')">시행령·시행규칙 <span class="view-tab-count" id="sublaw-count">0</span></button>
 </div>
 
 <div id="view-members">
@@ -1582,6 +1583,18 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
 
 </div><!-- /view-bills -->
 
+<div id="view-sublaws" style="display:none;">
+
+<h3 class="bill-section-h">현행 하위법령 <span class="view-tab-count" id="sublaw-count-current">0</span></h3>
+<p class="bill-section-note">도로교통법·자전거법·자동차관리법의 시행령·시행규칙 중 PM(개인형 이동장치)에 직접 적용되는 조문입니다. 상위법 어느 조항이 위임했는지, 현재 시행일 기준으로 무엇을 규정하는지를 함께 표시합니다.</p>
+<div class="bill-card-list" id="sublaw-cards-current"></div>
+
+<h3 class="bill-section-h">위임 예정 사항 <span class="view-tab-count" id="sublaw-count-pending">0</span></h3>
+<p class="bill-section-note">PM기본법(국토교통위원장 대안, DD20688)이 제정될 경우 시행령·시행규칙으로 내려올 위임조항입니다. 법률 통과 시점에 곧바로 하위법령 추적 대상이 확정되도록 미리 정리해 둡니다.</p>
+<div class="bill-card-list" id="sublaw-cards-pending"></div>
+
+</div><!-- /view-sublaws -->
+
 <footer style="border-top:1px solid var(--line);padding-top:20px;margin-top:10px;color:var(--ink-dim);font-size:12px;">
   출처: 열린국회정보 Open API (회의록, 국회의원 인적사항, 의안정보) · 21~22대 국토교통위원회·법제사법위원회·행정안전위원회·국정감사 회의록 원문, 국회의원 통합 정보, 22대 의안정보 기준, 2026-07-30 스냅샷. 국토위 22대 전체 회의(인접의제 검색)는 현재 백그라운드로 처리 중이며 결과 확보 시 갱신됩니다.
 </footer>
@@ -1590,8 +1603,9 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
 
 <script>
 function pmSwitchView(view){
-  document.getElementById('view-members').style.display = (view==='members') ? '' : 'none';
-  document.getElementById('view-bills').style.display = (view==='bills') ? '' : 'none';
+  ['members','bills','sublaws'].forEach(function(v){
+    document.getElementById('view-' + v).style.display = (v===view) ? '' : 'none';
+  });
   document.querySelectorAll('.view-tab').forEach(function(btn){
     btn.classList.toggle('active', btn.getAttribute('data-view')===view);
   });
@@ -1676,5 +1690,44 @@ var PM_AMENDMENTS = [
 
   document.getElementById('bill-cards').innerHTML = PM_BILLS.map(function(b){ return card(b, false); }).join('');
   document.getElementById('bill-cards-amend').innerHTML = PM_AMENDMENTS.map(function(b){ return card(b, true); }).join('');
+})();
+
+// 현행 하위법령 — 시행 중인 시행령·시행규칙 조문.
+// kind: '시행령' | '시행규칙', delegatedBy: 위임한 상위법 조항, effective: 현재 조문의 시행일.
+var PM_SUBLAWS_CURRENT = [
+];
+
+// 위임 예정 — PM기본법(대안) 제정 시 하위법령으로 내려올 사항.
+var PM_SUBLAWS_PENDING = [
+];
+
+(function renderSublaws(){
+  function card(s){
+    return '' +
+      '<div class="bill-card2">' +
+        '<div class="bc-top">' +
+          '<span class="bc-name">' + s.law + ' ' + s.article + (s.title ? ' (' + s.title + ')' : '') + '</span>' +
+          '<span class="st ' + (s.statusClass || 'support') + '">' + s.status + '</span>' +
+        '</div>' +
+        '<div class="bc-meta">' + s.kind + ' · 위임근거 <b>' + s.delegatedBy + '</b>' +
+          (s.effective ? ' · 시행 ' + s.effective : '') + '</div>' +
+        '<p class="bc-summary">' + s.summary + '</p>' +
+        (s.note ? '<p class="bc-stage-detail">' + s.note + '</p>' : '') +
+        (s.link ? '<a class="bc-link" href="' + s.link + '" target="_blank" rel="noopener">법령 원문 보기 ↗</a>' : '') +
+      '</div>';
+  }
+
+  function fill(elId, countIds, rows){
+    var el = document.getElementById(elId);
+    el.innerHTML = rows.length
+      ? rows.map(card).join('')
+      : '<p class="bill-section-note" style="margin:0;">법령 원문 대조 후 채웁니다.</p>';
+    countIds.forEach(function(id){ document.getElementById(id).textContent = rows.length; });
+  }
+
+  fill('sublaw-cards-current', ['sublaw-count-current'], PM_SUBLAWS_CURRENT);
+  fill('sublaw-cards-pending', ['sublaw-count-pending'], PM_SUBLAWS_PENDING);
+  document.getElementById('sublaw-count').textContent =
+    PM_SUBLAWS_CURRENT.length + PM_SUBLAWS_PENDING.length;
 })();
 </script>
