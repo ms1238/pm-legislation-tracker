@@ -3,7 +3,7 @@ name: PM 법안 트래커 일일 체크
 on:
   schedule:
     # UTC 기준 00:00, 08:00 = 한국시간 09:00, 17:00
-    - cron: "0 0,8 * * *"
+    - cron: "0 1,8 * * *"
   workflow_dispatch:   # GitHub 화면에서 수동 실행도 가능
 
 permissions:
