@@ -1,0 +1,44 @@
+name: PM 법안 트래커 일일 체크
+
+on:
+  schedule:
+    # UTC 기준 00:00, 08:00 = 한국시간 09:00, 17:00
+    - cron: "0 0,8 * * *"
+  workflow_dispatch:   # GitHub 화면에서 수동 실행도 가능
+
+permissions:
+  contents: write      # 상태 파일 커밋·푸시에 필요
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 의존성 설치
+        run: pip install -r automation/requirements.txt
+
+      - name: 변경 감지 실행
+        env:
+          ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python automation/cloud_check_updates.py
+
+      - name: 상태 파일 커밋·푸시
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add automation/
+          if git diff --cached --quiet; then
+            echo "상태 변화 없음 - 커밋 생략"
+          else
+            git commit -m "Routine check: state update only"
+            git push
+            echo "상태 파일 갱신 완료"
+          fi
