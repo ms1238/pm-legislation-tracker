@@ -23,5 +23,16 @@
         "sess": "제438회국회(임시회)"
       }
     ]
+  },
+  {
+    "checked_at": "2026-08-11T03:02:32.406271",
+    "changes": [
+      {
+        "type": "member_committee_change",
+        "name": "강대식",
+        "old_committee": "국토교통위원회",
+        "new_committee": "국토교통위원회, 예산결산특별위원회"
+      }
+    ]
   }
 ]
