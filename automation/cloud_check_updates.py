@@ -13,7 +13,17 @@ PM(개인형 이동수단) 법안 트래커 - 클라우드(Anthropic Routine)용
     실제 편집은 여전히 사람이 "PM 트래커 업데이트 반영해줘"라고 요청했을 때 처리한다.
 """
 import json, os, sys, re, io, urllib.request, urllib.parse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# 이 트래커가 다루는 시간은 전부 한국 국회 일정이라 KST가 기준이다.
+# GitHub 러너의 로컬 시간은 UTC이므로 datetime.now()를 그대로 쓰면
+# "오늘 일정" 판정이 국회 API가 주는 KST 날짜와 어긋날 수 있다
+# (UTC 15:00 이후 = KST 다음날). 실행이 밀리면 실제로 발생한다.
+KST = timezone(timedelta(hours=9))
+
+
+def now_kst():
+    return datetime.now(KST)
 
 WATCHED_SCHEDULE_COMMITTEES = {"국토교통위원회", "행정안전위원회", "법제사법위원회"}
 SCHEDULE_HORIZON_DAYS = 14
@@ -32,7 +42,7 @@ NAME_RE = re.compile(r'^([가-힣]{2,4})\s+(.*)', re.DOTALL)
 
 
 def log(msg):
-    print("[%s] %s" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), msg))
+    print("[%s] %s" % (now_kst().strftime("%Y-%m-%d %H:%M:%S"), msg))
 
 def api_get(url):
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -249,8 +259,8 @@ def check_schedule(key, snapshot):
     except Exception as e:
         log("일정 조회 실패: %s" % e)
         return [], []
-    today = datetime.now().strftime("%Y-%m-%d")
-    horizon = (datetime.now() + timedelta(days=SCHEDULE_HORIZON_DAYS)).strftime("%Y-%m-%d")
+    today = now_kst().strftime("%Y-%m-%d")
+    horizon = (now_kst() + timedelta(days=SCHEDULE_HORIZON_DAYS)).strftime("%Y-%m-%d")
     relevant = []
     for r in rows:
         kind = r.get("SCH_KIND")
@@ -339,7 +349,7 @@ def main():
             snapshot["bills"][bill_no] = {"name": name, "stage": get_stage(key, bill_no) or "정보없음",
                                             "committee": "국토교통위원회", "bill_id": bill_id, "seen_conf_ids": seen_conf_ids}
 
-    snapshot["last_full_scan"] = datetime.now().strftime("%Y-%m-%d")
+    snapshot["last_full_scan"] = now_kst().strftime("%Y-%m-%d")
 
     log("=== 의원 위원회 이동/직 상실 확인 ===")
     member_changes = []
@@ -374,11 +384,11 @@ def main():
             if os.path.exists(PENDING_PATH):
                 with open(PENDING_PATH, encoding="utf-8") as f:
                     pending = json.load(f)
-            pending.append({"checked_at": datetime.now().isoformat(), "changes": changes})
+            pending.append({"checked_at": now_kst().isoformat(), "changes": changes})
             with open(PENDING_PATH, "w", encoding="utf-8") as f:
                 json.dump(pending, f, ensure_ascii=False, indent=2)
 
-        lines = ["*PM 법안 트래커 업데이트 (클라우드 루틴)* (%s)" % datetime.now().strftime("%Y-%m-%d")]
+        lines = ["*PM 법안 트래커 업데이트 (클라우드 루틴)* (%s)" % now_kst().strftime("%Y-%m-%d")]
         lines.append("")
         if changes:
             lines.append("변경 사항:")
