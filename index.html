@@ -201,6 +201,7 @@ section.cat{margin-bottom:44px;}
 .chip.ppp{background:var(--ppp-bg);color:var(--ppp);}
 .chip.jp{background:var(--jp-bg);color:var(--jp);}
 .chip.meta{background:var(--surface-2);color:var(--ink-dim);font-weight:500;}
+.chip.chair{background:var(--stance-support-bg);color:var(--stance-support);font-weight:700;}
 .stance-tag{
   font-size:11.5px;
   padding:3px 9px;
@@ -370,8 +371,9 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
   <h1>개인형 이동수단(PM) 법안 스탠스 트래커</h1>
   <p class="subtitle">국회 열린국회정보 Open API(회의록·국회의원 인적사항)로 수집한 21~22대 국토위·법사위 회의록 원문을 바탕으로, 개인형 이동수단(PM/전동킥보드) 관련 법안에 대한 의원별 발언과 스탠스를 정리했습니다.</p>
   <div class="scope-note">
-    <b>기준일: 2026-07-31</b>
+    <b>기준일: 2026-08-12</b>
     <ul class="changelog">
+      <li><b>국토위 소위원회 구성 확정 반영</b> — 4개 소위 명단을 등재하고, 교통법안심사소위 12명을 ①②번 카테고리로 분리했습니다(스탠스 O 7명 / X 5명). 그동안 "소위 명단 대기"로 비어 있던 자리입니다. 교통소위원장은 정동만 의원, 직전 심사를 이끈 복기왕 의원은 국토법안심사소위원장으로 이동했습니다.</li>
       <li>스탠스 분류 기준을 PM업계 우호도 중심으로 재정의 (전용면허·나이인증·산업활성화·과잉규제 비판 = 우호 / 기존면허·관리·안전강화 = 비우호)</li>
       <li>각 카테고리 내 정렬을 우호도+발언량 가중치 기준으로 재배치</li>
       <li>기관·실무진 카테고리에 부산광역시 추가, 6·7번 카테고리 순서 교체</li>
@@ -389,55 +391,75 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
 <div id="view-members">
 
 <div class="summary-grid">
-  <div class="summary-cell pending"><span class="num">–</span><span class="lbl">① 교통소위·스탠스 O</span></div>
-  <div class="summary-cell pending"><span class="num">–</span><span class="lbl">② 교통소위·스탠스 X</span></div>
-  <div class="summary-cell"><span class="num">18</span><span class="lbl">③ 국토위·스탠스 O</span></div>
-  <div class="summary-cell"><span class="num">12</span><span class="lbl">④ 국토위·스탠스 X</span></div>
+  <div class="summary-cell"><span class="num">7</span><span class="lbl">① 교통소위·스탠스 O</span></div>
+  <div class="summary-cell"><span class="num">5</span><span class="lbl">② 교통소위·스탠스 X</span></div>
+  <div class="summary-cell"><span class="num">11</span><span class="lbl">③ 국토위·스탠스 O</span></div>
+  <div class="summary-cell"><span class="num">7</span><span class="lbl">④ 국토위·스탠스 X</span></div>
   <div class="summary-cell"><span class="num">32</span><span class="lbl">⑤ 타위원회·스탠스 O</span></div>
   <div class="summary-cell"><span class="num">13</span><span class="lbl">⑥ 기타(재선실패 등)</span></div>
   <div class="summary-cell"><span class="num">6</span><span class="lbl">⑦ 비의원 기관</span></div>
 </div>
-<style>.summary-grid{grid-template-columns:repeat(7,1fr);}@media (max-width:640px){.summary-grid{grid-template-columns:repeat(3,1fr);}}</style>
+<style>.summary-grid{grid-template-columns:repeat(7,1fr);}@media (max-width:640px){.summary-grid{grid-template-columns:repeat(3,1fr);}}
+.subc-box{border:1px solid var(--line);border-radius:10px;padding:0;margin:16px 0;overflow:hidden;}
+.subc-box>summary{cursor:pointer;padding:12px 16px;font-size:13.5px;font-weight:700;background:var(--surface-2);list-style:none;}
+.subc-box>summary::-webkit-details-marker{display:none;}
+.subc-box>summary::before{content:"▸ ";color:var(--ink-dim);}
+.subc-box[open]>summary::before{content:"▾ ";}
+.subc-wrap{overflow-x:auto;}
+.subc-table{width:100%;border-collapse:collapse;font-size:12px;min-width:560px;}
+.subc-table th,.subc-table td{border-top:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top;line-height:1.6;}
+.subc-table th{font-weight:700;color:var(--ink-dim);white-space:nowrap;}
+.subc-table tr.focus td{background:var(--stance-support-bg);}
+.subc-table .subc-name{font-weight:700;white-space:nowrap;}
+.subc-chair{font-weight:700;}
+.subc-foot{font-size:11.5px;color:var(--ink-dim);padding:10px 16px;border-top:1px solid var(--line);}</style>
+
+<details class="subc-box" open>
+  <summary>국토교통위원회 소위원회 구성 (2026-08 확정) — 교통법안심사소위가 PM 법안 심사 소위</summary>
+  <div class="subc-wrap">
+  <table class="subc-table">
+    <tr><th>소위원회</th><th>더불어민주당</th><th>국민의힘</th><th>비교섭단체</th></tr>
+    <tr>
+      <td class="subc-name">국토법안심사<br>소위원회</td>
+      <td><span class="subc-chair">복기왕(위원장)</span>, 김남근, 모경종, 안태준, 염태영, 조인철, 허영</td>
+      <td>김미애, 김은혜, 김정재, 김종양, 정희용</td>
+      <td>윤종오</td>
+    </tr>
+    <tr class="focus">
+      <td class="subc-name">교통법안심사<br>소위원회</td>
+      <td>강득구, 부승찬, 윤종군, 이용선, 장종태, 정일영</td>
+      <td><span class="subc-chair">정동만(위원장)</span>, 강대식, 신성범, 유상범</td>
+      <td>장경태, 황운하</td>
+    </tr>
+    <tr>
+      <td class="subc-name">예산결산기금심사<br>소위원회</td>
+      <td>김남근, 문정복, 염태영, 전용기, 정일영, 조인철, 황희</td>
+      <td><span class="subc-chair">엄태영(위원장)</span>, 김미애, 김은혜, 김종양, 정희용</td>
+      <td>황운하</td>
+    </tr>
+    <tr>
+      <td class="subc-name">청원심사<br>소위원회</td>
+      <td><span class="subc-chair">문정복(위원장)</span>, 윤종군, 이용선, 전용기, 황희</td>
+      <td>강대식, 김정재, 신성범, 유상범</td>
+      <td>장경태</td>
+    </tr>
+  </table>
+  </div>
+  <p class="subc-foot">PM 제정법·도로교통법 개정안은 <b>교통법안심사소위원회</b>에서 축조심사·의결됩니다(표시된 행). 이 12명이 위 ①②번 카테고리를 구성합니다. 직전 심사(2025-12~2026-04)를 이끈 복기왕 의원은 이번 구성에서 국토법안심사소위원장으로 이동해 교통소위에서 빠졌습니다.</p>
+</details>
 
 <!-- CATEGORY 1 -->
 <section class="cat">
   <div class="cat-head">
     <span class="cat-num">01</span>
     <h2 class="cat-title">현재 국토위 + 교통소위 소속 · PM 스탠스 있음</h2>
-    <span class="cat-desc">교통소위 명단 대기</span>
+    <span class="cat-desc">7명 · 2026-08 소위 구성 확정</span>
   </div>
-  <div class="pending-box">
-    소위원회 단위 소속 정보가 Open API에 없어 비어 있습니다.<br>
-    소위 명단이 확보되면 <b>③번(국토위·스탠스 O)</b> 중 교통소위 소속인 사람이 자동으로 여기로 이동합니다.
-    <div><button class="update-btn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>교통소위 명단 업데이트</button></div>
-  </div>
-</section>
-
-<!-- CATEGORY 2 -->
-<section class="cat">
-  <div class="cat-head">
-    <span class="cat-num">02</span>
-    <h2 class="cat-title">현재 국토위 + 교통소위 소속 · PM 스탠스 없음</h2>
-    <span class="cat-desc">교통소위 명단 대기</span>
-  </div>
-  <div class="pending-box">
-    소위 명단이 확보되면 <b>④번(국토위·스탠스 X)</b> 중 교통소위 소속인 사람이 자동으로 여기로 이동합니다.
-    <div><button class="update-btn" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>교통소위 명단 업데이트</button></div>
-  </div>
-</section>
-
-<!-- CATEGORY 3 -->
-<section class="cat">
-  <div class="cat-head">
-    <span class="cat-num">03</span>
-    <h2 class="cat-title">현재 국토위 소속 · PM 스탠스 있음</h2>
-    <span class="cat-desc">18명</span>
-  </div>
-  <p class="note-inline">발언 기록뿐 아니라 <b>법안 발의(대표+공동)</b>도 스탠스로 집계했습니다 — 발의 자체가 찬성/입법추진 의사표시이기 때문입니다. 공동발의자 명단까지 확인해 김미애·김남근·장종태·염태영·안태준·엄태영 6명을 새로 찾았습니다 (원래 ④번에 있었습니다).</p>
-
+  <p class="note-inline">국토교통위원회 <b>교통법안심사소위원회</b> 위원 12명 중 PM 관련 스탠스가 확인된 7명입니다. PM 법안을 실제로 축조심사·의결하는 소위라, 접촉 우선순위가 가장 높은 그룹입니다. (기존 ③번에서 이동)</p>
   <div class="member-card">
     <div class="member-top">
       <span class="member-name">정동만</span>
+      <span class="chip chair">교통소위원장</span>
       <span class="chip ppp">국민의힘</span>
       <span class="chip meta">부산 기장군</span>
       <span class="chip meta">재선</span>
@@ -456,6 +478,117 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
       </div>
     </details>
   </div>
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">강득구</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 안양시만안구</span>
+      <span class="chip meta">재선</span>
+      <span class="stance-tag inquiry">이용연령 하향 확인</span>
+    </div>
+    <p class="stance-text">2020년 교육위 국정감사에서 이용연령이 만 16세에서 13세로 낮아지는 시행(12월 10일)을 앞두고 교육부가 대응책을 마련했는지 확인했습니다.</p>
+    <details class="quotes"><summary>발언 원문 1건 · 출처: 교육위원회 국정감사</summary><div class="quote-block">
+      <div class="quote-item"><q>장관님, 부탁이 하나 있습니다. <b>전동킥보드가 12월 10일부터 법이 개정돼 가지고 만 16세에서 만 13세 이상이 운행할 수 있게 됩니다.</b> 아시지요?</q></div>
+    </div></details>
+  </div>
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">윤종군</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">경기 안성시</span>
+      <span class="chip meta">초선</span>
+      <span class="stance-tag caution">업계 주장에 반박</span>
+    </div>
+    <p class="stance-text">업계 관계자가 "규제 중심 법안이 시행되면 업계가 고사하고 PM 자체가 사라질 수밖에 없다"고 발언한 데 대해, 그동안 업계가 안전을 위해 실제로 어떤 노력을 해왔는지 반문하며 소비자 보호를 우선해야 한다고 반박했습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 2건</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-12-15 · 국토위 교통소위 공청회</span><q>"규제 중심의 법안이 시행되면 업계 자체가 고사하고 일자리가 사라지고 PM 자체가 사라질 수밖에 없다" 이렇게 얘기하셨는데 업계 입장에서 발생할 우려를 얘기할 수는 있겠지만 사고를 예방하고 방지하기 위해서 업계가 그동안 해 온 노력이 뭔지 이것 좀 얘기를 해 주시면 좋을 것 같고요.</q></div>
+        <div class="quote-item"><span class="qdate">2025-12-15</span><q>그러면 예산 말고 업계가 다른 어떤 대책을 가지고 있는지, 다른 대안이 뭔지 이 두 가지 좀 여쭤보겠습니다.</q></div>
+      </div>
+    </details>
+  </div>
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">유상범</span>
+      <span class="chip ppp">국민의힘</span>
+      <span class="chip meta">강원 홍천횡성영월평창</span>
+      <span class="chip meta">재선</span>
+      <span class="stance-tag caution">안전 우려 · 통계기반 검토 요구</span>
+    </div>
+    <p class="stance-text">청소년 이용 집중과 사망사고 빈발, 보호장구 미착용 문제를 지적하며 법무부·경찰청에 사고 통계·운전자 연령 분석과 필요시 공청회까지 포함한 입법적 검토를 주문했습니다. 자녀를 둔 학부모들이 느끼는 불안감을 근거로 들었습니다.</p>
+    <details class="quotes"><summary>발언 원문 2건 · 출처: 법제사법위원회 법안심사소위</summary><div class="quote-block">
+      <div class="quote-item"><span class="qdate">2022-11-28</span><q>전동킥보드도 사실은 지금 굉장히 젊은 학생들 중심으로 움직이면서 안전에 위협이 많이 되고 있는 부분도 있고 <b>본인들도 그로 인해서 사실은 사망 사고가 다수 빈발하고 있거든요</b>, 실제로.</q></div>
+      <div class="quote-item"><span class="qdate">2022-11-28</span><q>이 부분은 법무부가 경찰청이랑 한번 해서 <b>실제 그로 인한 사고의 빈발 건수 그다음에 운전자의 나이 이런 걸 종합적으로 분석해서 필요하면 공청회를 여는 정도까지 생각을 해 봐야 될 것 같아요.</b> 특히 아이들을 가지고 있는 부모들이 전동킥보드에 대해서 느끼는 위험성이 굉장히 높아요. 그리고 학생들이 아예 헬멧이나 이런 보호 장비 없이 대부분 운행을 하면서 여러 가지 사고도 많고, 어느 정도는 이제 우리가 그 부분에 대한 <b>입법적 검토를 해야 될 것 같다</b>는 생각이 들거든요. 그래서 그것은 준비를 해 주시라는 당부를 드리겠습니다.</q></div>
+    </div></details>
+  </div>
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">황운하</span>
+      <span class="chip meta" style="background:#efeaf7;color:#6b5b9a;">조국혁신당</span>
+      <span class="chip meta">비례</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">발의자</span>
+      <span class="stance-tag caution">무면허 위험성 실증 · 단속 강화 요구</span>
+    </div>
+    <p class="stance-text">본인이 직접 PM 대여 앱으로 무면허 인증을 시도해 "인증체계 건너뛰기가 쉽다"는 걸 실증했고, 무면허 사고로 작년 사망자만 23명이라는 통계를 근거로 강도 높은 대책을 요구했습니다. 발의자이면서도 가장 실증적·규제강화 지향적인 태도를 보였습니다.</p>
+    <details class="quotes">
+      <summary>발언 원문 1건 · 출처: 국정감사</summary>
+      <div class="quote-block">
+        <div class="quote-item"><span class="qdate">2025-10-29 · 국토교통위 국정감사</span><q>퍼스널 모빌리티(Personal Mobility), 킥보드가 대표적인 것인데요. 킥보드 무면허 사고가 계속 늘어나고 작년에 사망자가 23명이나 이릅니다. (…) 제가 한번 PM 킥보드를 빌려 봤어요. 빌리러 가서 보니까 인증체계 건너뛰기가 쉽더라고요. 즉 아무나 무면허 운전하기가 쉽다, 10대 청소년들이 얼마든지 무면허할 수 있겠더라 이걸 제가 확인을 했습니다.</q></div>
+      </div>
+    </details>
+  </div>
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">정일영</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">인천 연수구을</span>
+      <span class="chip meta">재선</span>
+      <span class="chip meta">발의자</span>
+      <span class="stance-tag caution">금지구역·단속 강화형 관리법 발의</span>
+    </div>
+    <p class="stance-text">"개인형 이동수단의 안전 및 관리에 관한 법률안"(2213974) 대표발의자로, 지자체의 킥보드 금지구역 지정 권한 신설과 무면허·미성년자 운전 단속 강화를 골자로 발의했습니다. 인천 송도 보행자 중상 사고를 발의 계기로 언급했고, 복기왕 소위원장과 PM 기본법 토론회를 공동 주최하는 등 대외활동도 병행했습니다(언론 보도 기준, 회의록 미확인).</p>
+  </div>
+  <div class="member-card">
+    <div class="member-top">
+      <span class="member-name">장종태</span>
+      <span class="chip dem">더불어민주당</span>
+      <span class="chip meta">대전 서구갑</span>
+      <span class="chip meta">초선</span>
+      <span class="chip meta">공동발의</span>
+      <span class="stance-tag caution">관리형 법안 공동발의</span>
+    </div>
+    <p class="stance-text">복기왕·권영진 의원안(2213026)의 공동발의자 20인 중 한 명입니다. 본인의 PM 관련 발언은 확인되지 않았습니다.</p>
+  </div>
+</section>
+
+<!-- CATEGORY 2 -->
+<section class="cat">
+  <div class="cat-head">
+    <span class="cat-num">02</span>
+    <h2 class="cat-title">현재 국토위 + 교통소위 소속 · PM 스탠스 없음</h2>
+    <span class="cat-desc">5명 · 회의록 범위 내 발언 미확인</span>
+  </div>
+  <p class="note-inline">교통법안심사소위 위원이지만 조사 범위 회의록에서 PM 관련 발언이 확인되지 않은 5명입니다. 스탠스가 안 잡혔을 뿐 <b>소위 표결권은 동일</b>하므로 우선순위는 낮지 않습니다. (기존 ④번에서 이동)</p>
+  <div class="compact-grid">
+    <div class="compact-card"><span class="cname">강대식</span><span class="cmeta">국민의힘 · 대구 동구군위군을 · 재선</span></div>
+    <div class="compact-card"><span class="cname">부승찬</span><span class="cmeta">더불어민주당 · 경기 용인시병 · 초선</span></div>
+    <div class="compact-card"><span class="cname">신성범</span><span class="cmeta">국민의힘 · 경남 산청함양거창합천 · 3선</span></div>
+    <div class="compact-card"><span class="cname">이용선</span><span class="cmeta">더불어민주당 · 서울 양천구을 · 재선</span></div>
+    <div class="compact-card"><span class="cname">장경태</span><span class="cmeta">더불어민주당 · 서울 동대문구을 · 재선</span></div>
+  </div>
+</section>
+
+<!-- CATEGORY 3 -->
+<section class="cat">
+  <div class="cat-head">
+    <span class="cat-num">03</span>
+    <h2 class="cat-title">현재 국토위 소속 · PM 스탠스 있음</h2>
+    <span class="cat-desc">11명 · 교통소위 아님</span>
+  </div>
+  <p class="note-inline">발언 기록뿐 아니라 <b>법안 발의(대표+공동)</b>도 스탠스로 집계했습니다 — 발의 자체가 찬성/입법추진 의사표시이기 때문입니다. 공동발의자 명단까지 확인해 김미애·김남근·장종태·염태영·안태준·엄태영 6명을 새로 찾았습니다 (원래 ④번에 있었습니다). 2026-08 소위 구성 확정에 따라 이 중 교통소위 소속 7명(정동만·강득구·윤종군·유상범·황운하·정일영·장종태)은 <b>①번으로 이동</b>했습니다.</p>
+
 
   <div class="member-card">
     <div class="member-top">
@@ -503,19 +636,6 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
     </details>
   </div>
 
-  <div class="member-card">
-    <div class="member-top">
-      <span class="member-name">강득구</span>
-      <span class="chip dem">더불어민주당</span>
-      <span class="chip meta">경기 안양시만안구</span>
-      <span class="chip meta">재선</span>
-      <span class="stance-tag inquiry">이용연령 하향 확인</span>
-    </div>
-    <p class="stance-text">2020년 교육위 국정감사에서 이용연령이 만 16세에서 13세로 낮아지는 시행(12월 10일)을 앞두고 교육부가 대응책을 마련했는지 확인했습니다.</p>
-    <details class="quotes"><summary>발언 원문 1건 · 출처: 교육위원회 국정감사</summary><div class="quote-block">
-      <div class="quote-item"><q>장관님, 부탁이 하나 있습니다. <b>전동킥보드가 12월 10일부터 법이 개정돼 가지고 만 16세에서 만 13세 이상이 운행할 수 있게 됩니다.</b> 아시지요?</q></div>
-    </div></details>
-  </div>
 
   <div class="member-card">
     <div class="member-top">
@@ -526,7 +646,7 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
       <span class="chip meta">발의자</span>
       <span class="stance-tag caution">관리·등록 체계 설계 주도</span>
     </div>
-    <p class="stance-text">"개인형 이동수단의 안전 및 관리에 관한 법률안"(권영진 의원과 공동, 2213026) 대표발의자이자 교통법안심사소위원장입니다. 법안명부터 "관리"에 방점을 뒀고, 이 법안이 실제로 최종 위원회 대안(DD20688)의 뼈대가 됐습니다. 2025-12-04~2026-04-29 사이 12건 병합 심사를 직접 진행하며 정부·업계 조율을 주도했고, 2025-11-26 회의에서는 정부 조율이 덜 됐다는 이유로 12건 전체 심사를 한 차례 연기시키기도 했습니다.</p>
+    <p class="stance-text">"개인형 이동수단의 안전 및 관리에 관한 법률안"(권영진 의원과 공동, 2213026) 대표발의자이자, 2025~26년 PM 12건 병합 심사 당시의 <b>교통법안심사소위원장</b>입니다. 2026-08 소위 구성에서는 국토법안심사소위원장을 맡아 교통소위에서는 빠졌습니다(그래서 ①번이 아닌 ③번). 법안명부터 "관리"에 방점을 뒀고, 이 법안이 실제로 최종 위원회 대안(DD20688)의 뼈대가 됐습니다. 2025-12-04~2026-04-29 사이 12건 병합 심사를 직접 진행하며 정부·업계 조율을 주도했고, 2025-11-26 회의에서는 정부 조율이 덜 됐다는 이유로 12건 전체 심사를 한 차례 연기시키기도 했습니다.</p>
     <details class="quotes">
       <summary>발언 원문 3건</summary>
       <div class="quote-block">
@@ -556,23 +676,6 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
     </details>
   </div>
 
-  <div class="member-card">
-    <div class="member-top">
-      <span class="member-name">윤종군</span>
-      <span class="chip dem">더불어민주당</span>
-      <span class="chip meta">경기 안성시</span>
-      <span class="chip meta">초선</span>
-      <span class="stance-tag caution">업계 주장에 반박</span>
-    </div>
-    <p class="stance-text">업계 관계자가 "규제 중심 법안이 시행되면 업계가 고사하고 PM 자체가 사라질 수밖에 없다"고 발언한 데 대해, 그동안 업계가 안전을 위해 실제로 어떤 노력을 해왔는지 반문하며 소비자 보호를 우선해야 한다고 반박했습니다.</p>
-    <details class="quotes">
-      <summary>발언 원문 2건</summary>
-      <div class="quote-block">
-        <div class="quote-item"><span class="qdate">2025-12-15 · 국토위 교통소위 공청회</span><q>"규제 중심의 법안이 시행되면 업계 자체가 고사하고 일자리가 사라지고 PM 자체가 사라질 수밖에 없다" 이렇게 얘기하셨는데 업계 입장에서 발생할 우려를 얘기할 수는 있겠지만 사고를 예방하고 방지하기 위해서 업계가 그동안 해 온 노력이 뭔지 이것 좀 얘기를 해 주시면 좋을 것 같고요.</q></div>
-        <div class="quote-item"><span class="qdate">2025-12-15</span><q>그러면 예산 말고 업계가 다른 어떤 대책을 가지고 있는지, 다른 대안이 뭔지 이 두 가지 좀 여쭤보겠습니다.</q></div>
-      </div>
-    </details>
-  </div>
 
   <div class="member-card">
     <div class="member-top">
@@ -592,20 +695,6 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
     </details>
   </div>
 
-  <div class="member-card">
-    <div class="member-top">
-      <span class="member-name">유상범</span>
-      <span class="chip ppp">국민의힘</span>
-      <span class="chip meta">강원 홍천횡성영월평창</span>
-      <span class="chip meta">재선</span>
-      <span class="stance-tag caution">안전 우려 · 통계기반 검토 요구</span>
-    </div>
-    <p class="stance-text">청소년 이용 집중과 사망사고 빈발, 보호장구 미착용 문제를 지적하며 법무부·경찰청에 사고 통계·운전자 연령 분석과 필요시 공청회까지 포함한 입법적 검토를 주문했습니다. 자녀를 둔 학부모들이 느끼는 불안감을 근거로 들었습니다.</p>
-    <details class="quotes"><summary>발언 원문 2건 · 출처: 법제사법위원회 법안심사소위</summary><div class="quote-block">
-      <div class="quote-item"><span class="qdate">2022-11-28</span><q>전동킥보드도 사실은 지금 굉장히 젊은 학생들 중심으로 움직이면서 안전에 위협이 많이 되고 있는 부분도 있고 <b>본인들도 그로 인해서 사실은 사망 사고가 다수 빈발하고 있거든요</b>, 실제로.</q></div>
-      <div class="quote-item"><span class="qdate">2022-11-28</span><q>이 부분은 법무부가 경찰청이랑 한번 해서 <b>실제 그로 인한 사고의 빈발 건수 그다음에 운전자의 나이 이런 걸 종합적으로 분석해서 필요하면 공청회를 여는 정도까지 생각을 해 봐야 될 것 같아요.</b> 특히 아이들을 가지고 있는 부모들이 전동킥보드에 대해서 느끼는 위험성이 굉장히 높아요. 그리고 학생들이 아예 헬멧이나 이런 보호 장비 없이 대부분 운행을 하면서 여러 가지 사고도 많고, 어느 정도는 이제 우리가 그 부분에 대한 <b>입법적 검토를 해야 될 것 같다</b>는 생각이 들거든요. 그래서 그것은 준비를 해 주시라는 당부를 드리겠습니다.</q></div>
-    </div></details>
-  </div>
 
   <div class="member-card">
     <div class="member-top">
@@ -622,35 +711,7 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
     </div></details>
   </div>
 
-  <div class="member-card">
-    <div class="member-top">
-      <span class="member-name">황운하</span>
-      <span class="chip meta" style="background:#efeaf7;color:#6b5b9a;">조국혁신당</span>
-      <span class="chip meta">비례</span>
-      <span class="chip meta">재선</span>
-      <span class="chip meta">발의자</span>
-      <span class="stance-tag caution">무면허 위험성 실증 · 단속 강화 요구</span>
-    </div>
-    <p class="stance-text">본인이 직접 PM 대여 앱으로 무면허 인증을 시도해 "인증체계 건너뛰기가 쉽다"는 걸 실증했고, 무면허 사고로 작년 사망자만 23명이라는 통계를 근거로 강도 높은 대책을 요구했습니다. 발의자이면서도 가장 실증적·규제강화 지향적인 태도를 보였습니다.</p>
-    <details class="quotes">
-      <summary>발언 원문 1건 · 출처: 국정감사</summary>
-      <div class="quote-block">
-        <div class="quote-item"><span class="qdate">2025-10-29 · 국토교통위 국정감사</span><q>퍼스널 모빌리티(Personal Mobility), 킥보드가 대표적인 것인데요. 킥보드 무면허 사고가 계속 늘어나고 작년에 사망자가 23명이나 이릅니다. (…) 제가 한번 PM 킥보드를 빌려 봤어요. 빌리러 가서 보니까 인증체계 건너뛰기가 쉽더라고요. 즉 아무나 무면허 운전하기가 쉽다, 10대 청소년들이 얼마든지 무면허할 수 있겠더라 이걸 제가 확인을 했습니다.</q></div>
-      </div>
-    </details>
-  </div>
 
-  <div class="member-card">
-    <div class="member-top">
-      <span class="member-name">정일영</span>
-      <span class="chip dem">더불어민주당</span>
-      <span class="chip meta">인천 연수구을</span>
-      <span class="chip meta">재선</span>
-      <span class="chip meta">발의자</span>
-      <span class="stance-tag caution">금지구역·단속 강화형 관리법 발의</span>
-    </div>
-    <p class="stance-text">"개인형 이동수단의 안전 및 관리에 관한 법률안"(2213974) 대표발의자로, 지자체의 킥보드 금지구역 지정 권한 신설과 무면허·미성년자 운전 단속 강화를 골자로 발의했습니다. 인천 송도 보행자 중상 사고를 발의 계기로 언급했고, 복기왕 소위원장과 PM 기본법 토론회를 공동 주최하는 등 대외활동도 병행했습니다(언론 보도 기준, 회의록 미확인).</p>
-  </div>
 
   <div class="member-card">
     <div class="member-top">
@@ -705,17 +766,6 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
     </div></details>
   </div>
 
-  <div class="member-card">
-    <div class="member-top">
-      <span class="member-name">장종태</span>
-      <span class="chip dem">더불어민주당</span>
-      <span class="chip meta">대전 서구갑</span>
-      <span class="chip meta">초선</span>
-      <span class="chip meta">공동발의</span>
-      <span class="stance-tag caution">관리형 법안 공동발의</span>
-    </div>
-    <p class="stance-text">복기왕·권영진 의원안(2213026)의 공동발의자 20인 중 한 명입니다. 본인의 PM 관련 발언은 확인되지 않았습니다.</p>
-  </div>
 
 </section>
 
@@ -724,18 +774,13 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
   <div class="cat-head">
     <span class="cat-num">04</span>
     <h2 class="cat-title">현재 국토위 소속 · PM 스탠스 없음</h2>
-    <span class="cat-desc">12명 · 회의록 범위 내 발언 미확인</span>
+    <span class="cat-desc">7명 · 교통소위 아님 · 회의록 범위 내 발언 미확인</span>
   </div>
-  <p class="note-inline">아래 27명은 국회의원 통합 API 기준 현재 국토교통위원회 소속이지만, 지금까지 조사한 회의록 범위(21~22대 개인형 이동수단 관련 안건 상정 회의) 안에서 PM 관련 발언이 확인되지 않았습니다. 아직 국토위에 배치되기 전 시점이거나, 해당 회의에 불참했을 수 있습니다.</p>
+  <p class="note-inline">아래 7명은 국회의원 통합 API 기준 현재 국토교통위원회 소속이지만, 지금까지 조사한 회의록 범위(21~22대 개인형 이동수단 관련 안건 상정 회의) 안에서 PM 관련 발언이 확인되지 않았습니다. 아직 국토위에 배치되기 전 시점이거나, 해당 회의에 불참했을 수 있습니다. 2026-08 소위 구성 확정에 따라 교통소위 소속 5명(강대식·부승찬·신성범·이용선·장경태)은 <b>②번으로 이동</b>했습니다.</p>
   <div class="compact-grid">
-    <div class="compact-card"><span class="cname">강대식</span><span class="cmeta">국민의힘 · 대구 동구군위군을 · 재선</span></div>
     <div class="compact-card"><span class="cname">모경종</span><span class="cmeta">더불어민주당 · 인천 서구병 · 초선</span></div>
     <div class="compact-card"><span class="cname">문정복</span><span class="cmeta">더불어민주당 · 경기 시흥시갑 · 재선</span></div>
-    <div class="compact-card"><span class="cname">부승찬</span><span class="cmeta">더불어민주당 · 경기 용인시병 · 초선</span></div>
-    <div class="compact-card"><span class="cname">신성범</span><span class="cmeta">국민의힘 · 경남 산청함양거창합천 · 3선</span></div>
     <div class="compact-card"><span class="cname">유의동</span><span class="cmeta">국민의힘 · 경기 평택시을 · 4선</span></div>
-    <div class="compact-card"><span class="cname">이용선</span><span class="cmeta">더불어민주당 · 서울 양천구을 · 재선</span></div>
-    <div class="compact-card"><span class="cname">장경태</span><span class="cmeta">더불어민주당 · 서울 동대문구을 · 재선</span></div>
     <div class="compact-card"><span class="cname">정희용</span><span class="cmeta">국민의힘 · 경북 고령성주칠곡 · 재선</span></div>
     <div class="compact-card"><span class="cname">조인철</span><span class="cmeta">더불어민주당 · 광주 서구갑 · 초선</span></div>
     <div class="compact-card"><span class="cname">허영</span><span class="cmeta">더불어민주당 · 강원 춘천철원화천양구갑 · 재선</span></div>
