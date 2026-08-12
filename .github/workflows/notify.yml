@@ -1,0 +1,29 @@
+name: 슬랙 수동 알림
+
+# 페이지를 직접 수정한 뒤 채널에 알릴 때 손으로 실행한다.
+# 일일 감지(daily-check.yml)와는 별개 경로.
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "슬랙에 보낼 메시지 (mrkdwn)"
+        required: true
+        type: string
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 슬랙 전송
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_MESSAGE: ${{ inputs.message }}
+        run: python automation/notify_slack.py
