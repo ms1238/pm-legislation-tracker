@@ -98,6 +98,17 @@ def main():
     members = page_members()
     print("페이지에서 추출한 현직 의원 %d명\n" % len(members))
 
+    # 슬래시 이력의 정렬 방향을 판정하기 위한 대조군.
+    # 윤종오·황운하는 소수정당, 장경태는 탈당 이력이 있어 이력이 여러 개일 것으로 예상된다.
+    print("[원본 값 표본]")
+    for name in ("장경태", "윤종오", "황운하", "정동만"):
+        row = lookup(name)
+        if row:
+            print("  %-5s PLPT_NM=%r" % (name, row.get("PLPT_NM")))
+        else:
+            print("  %-5s 조회 실패" % name)
+    print()
+
     mismatches, unresolved, field_seen = [], [], set()
     for i, (name, shown) in enumerate(sorted(members.items()), 1):
         row = lookup(name)
@@ -114,6 +125,9 @@ def main():
         elif actual != shown:
             mismatches.append((name, shown, actual))
             print("%3d. %-5s 페이지=%-8s API=%-8s  ← 불일치" % (i, name, shown, actual))
+            # 슬래시 이력의 순서(오래된순/최신순)를 눈으로 확인하기 위해 원본을 그대로 찍는다.
+            print("       원본 %s = %r" % (field, row.get(field)))
+            print("       GTELT_ERACO=%r  ELECD_NM=%r" % (row.get("GTELT_ERACO"), row.get("ELECD_NM")))
         else:
             print("%3d. %-5s %s" % (i, name, actual))
 
