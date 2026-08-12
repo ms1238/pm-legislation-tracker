@@ -24,21 +24,9 @@ jobs:
       - name: 의존성 설치
         run: pip install -r automation/requirements.txt
 
-      - name: 변경 감지 실행
+      # [임시] 이 브랜치에서는 엔드포인트 구조 진단만 수행한다.
+      # 상태 파일을 건드리지 않으므로 커밋·푸시 단계도 없다.
+      - name: 엔드포인트 진단
         env:
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: python automation/cloud_check_updates.py
-
-      - name: 상태 파일 커밋·푸시
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add automation/
-          if git diff --cached --quiet; then
-            echo "상태 변화 없음 - 커밋 생략"
-          else
-            git commit -m "Routine check: state update only"
-            git push
-            echo "상태 파일 갱신 완료"
-          fi
+        run: python automation/probe_endpoints.py
