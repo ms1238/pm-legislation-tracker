@@ -79,6 +79,25 @@ def search_new_bills(key, age="22"):
             found[r["BILL_NO"]] = {"name": r["BILL_NAME"], "bill_id": r.get("BILL_ID", "")}
     return found
 
+PARTY_FIELDS = ["PLPT_NM", "POLY_NM", "PARTY_NM"]
+
+
+def extract_party_raw(row):
+    """정당 필드 원본을 그대로 돌려준다.
+
+    값이 '더불어민주당/무소속'처럼 슬래시로 이어진 이력일 때 어느 쪽이 현재인지는
+    확인하지 못했다(2026-08 시점, API 지연으로 원본 표본 확보 실패). 그래서 여기서
+    현재 정당을 골라내려 하지 않고 문자열 전체를 저장·비교한다. 이력이 어떤 순서든
+    변동이 생기면 문자열이 달라지므로 감지 자체는 정확하고, 어느 쪽으로 바뀐 건지는
+    알림에 원본을 그대로 실어 사람이 판단한다.
+    """
+    for f in PARTY_FIELDS:
+        raw = row.get(f)
+        if raw:
+            return raw.strip()
+    return ""
+
+
 def check_member_moves(key, member_snapshot):
     changes = []
     for name, info in member_snapshot.items():
@@ -107,6 +126,16 @@ def check_member_moves(key, member_snapshot):
                              "old_committee": old_committee, "new_committee": new_committee})
         info["committee"] = new_committee
         info["active"] = new_active
+
+        # 정당 변동(탈당·입당·제명·합당). 스냅샷에 party가 아직 없는 첫 실행에서는
+        # 전원이 변경으로 잡히므로, 값만 심어두고 알리지 않는다.
+        new_party = extract_party_raw(chosen) if chosen else ""
+        old_party = info.get("party")
+        if new_party:
+            if old_party and new_party != old_party:
+                changes.append({"type": "member_party_change", "name": name,
+                                 "old_party": old_party, "new_party": new_party})
+            info["party"] = new_party
     return changes
 
 def check_bill_meetings(key, snapshot):
@@ -362,6 +391,8 @@ def main():
                     lines.append("• 🚪 %s 의원 — 의원직/소속위원회 정보 소실 (직 상실 가능성, 확인 필요)" % c["name"])
                 elif c["type"] == "member_committee_change":
                     lines.append("• 🔀 %s 의원 — 소속위원회 변경: %s → %s" % (c["name"], c["old_committee"] or "(없음)", c["new_committee"] or "(없음)"))
+                elif c["type"] == "member_party_change":
+                    lines.append("• 🏳️ %s 의원 — 정당 이력 변경: `%s` → `%s`\n   (API 원본 그대로입니다. 페이지 정당 표기를 확인·정정해 주세요)" % (c["name"], c["old_party"], c["new_party"]))
                 elif c["type"] == "new_meeting_hit":
                     where = c["committee"] + (" " + c["sub_committee"] if c.get("sub_committee") else " " + c["kind"])
                     if c["speakers"]:
