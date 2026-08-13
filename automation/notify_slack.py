@@ -21,8 +21,9 @@ def send(webhook_url, text):
         "blocks": [
             {"type": "section", "text": {"type": "mrkdwn", "text": text}},
             {"type": "actions", "elements": [
-                {"type": "button", "text": {"type": "plain_text", "text": "🛴 트래커 열기"}, "url": ARTIFACT_URL, "style": "primary"},
-                {"type": "button", "text": {"type": "plain_text", "text": "🌐 공개 페이지 열기"}, "url": GITHUB_PAGES_URL},
+                # 공개 페이지가 주 링크 — 자동 배포라 항상 최신이다.
+                {"type": "button", "text": {"type": "plain_text", "text": "🌐 트래커 열기"}, "url": GITHUB_PAGES_URL, "style": "primary"},
+                {"type": "button", "text": {"type": "plain_text", "text": "🛴 아티팩트(수동 갱신)"}, "url": ARTIFACT_URL},
             ]},
         ],
     }

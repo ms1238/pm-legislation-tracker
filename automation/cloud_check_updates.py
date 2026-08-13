@@ -44,10 +44,34 @@ NAME_RE = re.compile(r'^([가-힣]{2,4})\s+(.*)', re.DOTALL)
 def log(msg):
     print("[%s] %s" % (now_kst().strftime("%Y-%m-%d %H:%M:%S"), msg))
 
+# 국회 API 호출 성패 집계. 호출부가 예외를 전부 삼키기 때문에(그래야 한 건 실패가
+# 전체를 멈추지 않는다) 여기서 세어두지 않으면 "API가 죽어서 아무것도 못 봤다"와
+# "볼 게 없었다"를 구분할 방법이 없다.
+API_ATTEMPTS = 0
+API_FAILURES = 0
+
+# 이 비율 이상 실패하면 그 실행은 신뢰할 수 없다고 보고 상태를 갱신하지 않는다.
+FAILURE_ABORT_RATIO = 0.5
+
+
 def api_get(url):
+    global API_ATTEMPTS, API_FAILURES
+    API_ATTEMPTS += 1
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        API_FAILURES += 1
+        raise
+
+
+def api_health():
+    """(실패율, 요약문자열)을 돌려준다. 호출이 아예 없었으면 실패율 0으로 본다."""
+    if API_ATTEMPTS == 0:
+        return 0.0, "API 호출 없음"
+    ratio = API_FAILURES / API_ATTEMPTS
+    return ratio, "%d건 중 %d건 실패 (%.0f%%)" % (API_ATTEMPTS, API_FAILURES, ratio * 100)
 
 def get_stage(key, bill_no):
     url = "https://open.assembly.go.kr/portal/openapi/ALLBILL?KEY=%s&Type=json&pIndex=1&pSize=5&BILL_NO=%s" % (key, bill_no)
@@ -294,8 +318,11 @@ def send_slack(webhook_url, text):
         "blocks": [
             {"type": "section", "text": {"type": "mrkdwn", "text": text}},
             {"type": "actions", "elements": [
-                {"type": "button", "text": {"type": "plain_text", "text": "🛴 트래커 열기"}, "url": ARTIFACT_URL, "style": "primary"},
-                {"type": "button", "text": {"type": "plain_text", "text": "🌐 공개 페이지 열기"}, "url": GITHUB_PAGES_URL},
+                # 공개 페이지를 주 링크로 둔다 — master에 머지되면 자동 배포되므로
+                # 항상 최신이다. 아티팩트는 재발행과 공유 핀 이동을 사람이 해야 해서
+                # 실제로 구버전이 팀에 노출된 적이 있다.
+                {"type": "button", "text": {"type": "plain_text", "text": "🌐 트래커 열기"}, "url": GITHUB_PAGES_URL, "style": "primary"},
+                {"type": "button", "text": {"type": "plain_text", "text": "🛴 아티팩트(수동 갱신)"}, "url": ARTIFACT_URL},
             ]},
         ],
     }
@@ -352,14 +379,12 @@ def main():
     snapshot["last_full_scan"] = now_kst().strftime("%Y-%m-%d")
 
     log("=== 의원 위원회 이동/직 상실 확인 ===")
-    member_changes = []
+    member_snapshot = None
     if os.path.exists(MEMBER_SNAPSHOT_PATH):
         with open(MEMBER_SNAPSHOT_PATH, encoding="utf-8") as f:
             member_snapshot = json.load(f)
-        member_changes = check_member_moves(key, member_snapshot)
-        changes.extend(member_changes)
-        with open(MEMBER_SNAPSHOT_PATH, "w", encoding="utf-8") as f:
-            json.dump(member_snapshot, f, ensure_ascii=False, indent=2)
+        changes.extend(check_member_moves(key, member_snapshot))
+        # 저장은 아래 건전성 판정을 통과한 뒤에 한다.
 
     log("=== 신규 회의록 키워드 스캔 ===")
     meeting_changes, newest_date = check_new_meetings(key, snapshot)
@@ -374,50 +399,67 @@ def main():
     for s in new_schedule_items:
         changes.append({"type": "new_schedule", **s})
 
+    # --- 실행 건전성 판정 ---
+    # 조회가 절반 이상 실패했다면 이번 실행으로 본 것은 신뢰할 수 없다. 이때 상태를
+    # 저장해 버리면 실패한 구간의 값이 다음 실행의 기준선이 되어, 그 사이 일어난
+    # 변경은 영영 잡히지 않는다. 그래서 아무것도 쓰지 않고 그대로 끝낸다 —
+    # 감지는 전부 "저장된 상태와의 비교"라 저장을 미루면 놓치는 게 아니라 미뤄질 뿐이고,
+    # 다음 정상 실행이 밀린 것까지 한꺼번에 잡는다.
+    ratio, summary = api_health()
+    if ratio >= FAILURE_ABORT_RATIO:
+        log("!!! 국회 API 조회 실패율 과다 — %s" % summary)
+        log("!!! 이번 실행은 신뢰할 수 없어 상태 파일을 갱신하지 않고 종료합니다.")
+        log("!!! (슬랙 알림은 보내지 않습니다. Actions 실행이 실패로 표시됩니다.)")
+        print("API_FAILED=true")
+        print("HAS_CHANGES=false")
+        sys.exit(1)
+    log("API 조회 상태: %s" % summary)
+
+    if member_snapshot is not None:
+        with open(MEMBER_SNAPSHOT_PATH, "w", encoding="utf-8") as f:
+            json.dump(member_snapshot, f, ensure_ascii=False, indent=2)
     with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
 
-    if changes or today_schedule_items:
+    # 변경이 없으면 슬랙을 보내지 않는다. 오늘 일정만 있는 날은 이미 그 일정을
+    # 등록 시점에 '새 일정'으로 알렸으므로 당일 재알림은 중복이다.
+    if changes:
         log("변경 사항 %d건, 오늘 일정 %d건" % (len(changes), len(today_schedule_items)))
-        if changes:
-            pending = []
-            if os.path.exists(PENDING_PATH):
-                with open(PENDING_PATH, encoding="utf-8") as f:
-                    pending = json.load(f)
-            pending.append({"checked_at": now_kst().isoformat(), "changes": changes})
-            with open(PENDING_PATH, "w", encoding="utf-8") as f:
-                json.dump(pending, f, ensure_ascii=False, indent=2)
+        pending = []
+        if os.path.exists(PENDING_PATH):
+            with open(PENDING_PATH, encoding="utf-8") as f:
+                pending = json.load(f)
+        pending.append({"checked_at": now_kst().isoformat(), "changes": changes})
+        with open(PENDING_PATH, "w", encoding="utf-8") as f:
+            json.dump(pending, f, ensure_ascii=False, indent=2)
 
         lines = ["*PM 법안 트래커 업데이트 (클라우드 루틴)* (%s)" % now_kst().strftime("%Y-%m-%d")]
         lines.append("")
-        if changes:
-            lines.append("변경 사항:")
-            for c in changes:
-                if c["type"] == "new_bill":
-                    lines.append("• 🆕 새 의안 발견 — [%s] %s" % (c["bill_no"], c["name"]))
-                elif c["type"] == "stage_change":
-                    lines.append("• 🔄 [%s] %s\n   %s → %s" % (c["bill_no"], c["name"], c["old_stage"], c["new_stage"]))
-                elif c["type"] == "member_seat_lost":
-                    lines.append("• 🚪 %s 의원 — 의원직/소속위원회 정보 소실 (직 상실 가능성, 확인 필요)" % c["name"])
-                elif c["type"] == "member_committee_change":
-                    lines.append("• 🔀 %s 의원 — 소속위원회 변경: %s → %s" % (c["name"], c["old_committee"] or "(없음)", c["new_committee"] or "(없음)"))
-                elif c["type"] == "member_party_change":
-                    lines.append("• 🏳️ %s 의원 — 정당 이력 변경: `%s` → `%s`\n   (API 원본 그대로입니다. 페이지 정당 표기를 확인·정정해 주세요)" % (c["name"], c["old_party"], c["new_party"]))
-                elif c["type"] == "new_meeting_hit":
-                    where = c["committee"] + (" " + c["sub_committee"] if c.get("sub_committee") else " " + c["kind"])
-                    if c["speakers"]:
-                        who = ", ".join(c["speakers"][:3]) + ("의원 등이" if len(c["speakers"]) > 1 else " 의원이")
-                        lines.append("• 📄 [%s, %s] %sPM 관련 언급" % (where, c["date"], who + " "))
-                    else:
-                        lines.append("• 📄 [%s, %s] PM 관련 언급 있음(발언자 특정 안 됨)" % (where, c["date"]))
-                elif c["type"] == "bill_new_meeting":
-                    lines.append("• 🏛️ [%s] %s — 새로 상정됨 (%s %s, %s)" % (c["bill_no"], c["name"], c["sess"], c["dgr"], c["date"]))
-                elif c["type"] == "new_schedule":
-                    lines.append("• 🗓️ 새 일정 — %s, %s: %s" % (c["date"], c["committee"], c["content"]))
-            lines.append("")
-            lines.append("Claude Code에서 \"PM 트래커 업데이트 반영해줘\"라고 요청하면 위 변경사항이 페이지에 반영됩니다.")
-        else:
-            lines.append("변경 사항 없음.")
+        lines.append("변경 사항:")
+        for c in changes:
+            if c["type"] == "new_bill":
+                lines.append("• 🆕 새 의안 발견 — [%s] %s" % (c["bill_no"], c["name"]))
+            elif c["type"] == "stage_change":
+                lines.append("• 🔄 [%s] %s\n   %s → %s" % (c["bill_no"], c["name"], c["old_stage"], c["new_stage"]))
+            elif c["type"] == "member_seat_lost":
+                lines.append("• 🚪 %s 의원 — 의원직/소속위원회 정보 소실 (직 상실 가능성, 확인 필요)" % c["name"])
+            elif c["type"] == "member_committee_change":
+                lines.append("• 🔀 %s 의원 — 소속위원회 변경: %s → %s" % (c["name"], c["old_committee"] or "(없음)", c["new_committee"] or "(없음)"))
+            elif c["type"] == "member_party_change":
+                lines.append("• 🏳️ %s 의원 — 정당 이력 변경: `%s` → `%s`\n   (API 원본 그대로입니다. 페이지 정당 표기를 확인·정정해 주세요)" % (c["name"], c["old_party"], c["new_party"]))
+            elif c["type"] == "new_meeting_hit":
+                where = c["committee"] + (" " + c["sub_committee"] if c.get("sub_committee") else " " + c["kind"])
+                if c["speakers"]:
+                    who = ", ".join(c["speakers"][:3]) + ("의원 등이" if len(c["speakers"]) > 1 else " 의원이")
+                    lines.append("• 📄 [%s, %s] %sPM 관련 언급" % (where, c["date"], who + " "))
+                else:
+                    lines.append("• 📄 [%s, %s] PM 관련 언급 있음(발언자 특정 안 됨)" % (where, c["date"]))
+            elif c["type"] == "bill_new_meeting":
+                lines.append("• 🏛️ [%s] %s — 새로 상정됨 (%s %s, %s)" % (c["bill_no"], c["name"], c["sess"], c["dgr"], c["date"]))
+            elif c["type"] == "new_schedule":
+                lines.append("• 🗓️ 새 일정 — %s, %s: %s" % (c["date"], c["committee"], c["content"]))
+        lines.append("")
+        lines.append("Claude Code에서 \"PM 트래커 업데이트 반영해줘\"라고 요청하면 위 변경사항이 페이지에 반영됩니다.")
 
         if today_schedule_items:
             lines.append("")
