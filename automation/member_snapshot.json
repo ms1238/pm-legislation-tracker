@@ -1,250 +1,312 @@
 {
   "강대식": {
     "committee": "국토교통위원회, 예산결산특별위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "강득구": {
     "committee": "기후위기 특별위원회, 국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "고동진": {
     "committee": "외교통일위원회",
-    "active": true
+    "active": true,
+    "party": "국민의힘"
   },
   "김교흥": {
     "committee": "보건복지위원회, 예산결산특별위원회",
-    "active": true
+    "active": true,
+    "party": "열린우리당/더불어민주당/더불어민주당"
   },
   "김남근": {
     "committee": "국토교통위원회, 성평등가족위원회, 예산결산특별위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "김미애": {
     "committee": "국토교통위원회, 국회운영위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "김상훈": {
     "committee": "재정경제기획위원회",
-    "active": true
+    "active": true,
+    "party": "새누리당/새누리당/미래통합당/국민의힘"
   },
   "김성원": {
     "committee": "산업통상자원중소벤처기업위원회",
-    "active": true
+    "active": true,
+    "party": "새누리당/미래통합당/국민의힘"
   },
   "김성회": {
     "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 기후위기 특별위원회, 국방위원회, 국회운영위원회, 예산결산특별위원회, 제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "김영배": {
     "committee": "제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회, 행정안전위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "김은혜": {
     "committee": "제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회, 국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "김정재": {
     "committee": "국토교통위원회, 성평등가족위원회",
-    "active": true
+    "active": true,
+    "party": "새누리당/미래통합당/국민의힘"
   },
   "김종양": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "국민의힘"
   },
   "김희정": {
     "committee": "교육위원회",
-    "active": true
+    "active": true,
+    "party": "한나라당/새누리당/국민의힘"
   },
   "맹성규": {
     "committee": "외교통일위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당/더불어민주당"
   },
   "모경종": {
     "committee": "연금개혁 특별위원회, 국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "문정복": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "문진석": {
     "committee": "재정경제기획위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "민홍철": {
     "committee": "국방위원회",
-    "active": true
+    "active": true,
+    "party": "민주통합당/더불어민주당/더불어민주당/더불어민주당"
   },
   "박상혁": {
     "committee": "정무위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "박성민": {
     "committee": "산업통상자원중소벤처기업위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "박형수": {
     "committee": "법제사법위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "배준영": {
     "committee": "예산결산특별위원회, 재정경제기획위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "복기왕": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "열린우리당/더불어민주당"
   },
   "부승찬": {
     "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "서범수": {
     "committee": "기후위기 특별위원회, 제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회, 교육위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "서영교": {
     "committee": "법제사법위원회",
-    "active": true
+    "active": true,
+    "party": "민주통합당/더불어민주당/더불어민주당/더불어민주당"
   },
   "손명수": {
     "committee": "정무위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "송기헌": {
     "committee": "과학기술정보방송통신위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당/더불어민주당"
   },
   "송석준": {
     "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 외교통일위원회",
-    "active": true
+    "active": true,
+    "party": "새누리당/미래통합당/국민의힘"
   },
   "송언석": {
     "committee": "예산결산특별위원회, 정무위원회",
-    "active": true
+    "active": true,
+    "party": "자유한국당/미래통합당/국민의힘"
   },
   "신성범": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "한나라당/새누리당/국민의힘"
   },
   "안태준": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "엄태영": {
     "committee": "국토교통위원회, 예산결산특별위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "염태영": {
     "committee": "기후위기 특별위원회, 국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "유상범": {
     "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 국토교통위원회, 예산결산특별위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "유의동": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "새누리당/새누리당/미래통합당/국민의힘"
   },
   "윤종군": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "윤종오": {
     "committee": "국토교통위원회, 국회운영위원회",
-    "active": true
+    "active": true,
+    "party": "무소속/진보당"
   },
   "윤준병": {
     "committee": "농림축산식품해양수산위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "이만희": {
     "committee": "보건복지위원회",
-    "active": true
+    "active": true,
+    "party": "새누리당/미래통합당/국민의힘"
   },
   "이연희": {
     "committee": "과학기술정보방송통신위원회, 성평등가족위원회, 예산결산특별위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "이용선": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "이해식": {
     "committee": "제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회, 행정안전위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "임호선": {
     "committee": "예산결산특별위원회, 행정안전위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "장경태": {
     "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "장종태": {
     "committee": "국토교통위원회, 국회운영위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "전용기": {
     "committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 제9회전국동시지방선거투표용지부족사태등국민참정권침해진상규명및선거관리개혁을위한국정조사특별위원회, 국토교통위원회, 국회운영위원회",
-    "active": true
+    "active": true,
+    "party": "더불어시민당/더불어민주당"
   },
   "정동만": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "정일영": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "정점식": {
     "committee": "국회운영위원회, 외교통일위원회, 정보위원회",
-    "active": true
+    "active": true,
+    "party": "자유한국당/미래통합당/국민의힘"
   },
   "정준호": {
     "committee": "문화체육관광위원회, 예산결산특별위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "정희용": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "미래통합당/국민의힘"
   },
   "조인철": {
     "committee": "국토교통위원회, 예산결산특별위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당"
   },
   "진성준": {
     "committee": "국방위원회",
-    "active": true
+    "active": true,
+    "party": "민주통합당/더불어민주당/더불어민주당"
   },
   "천준호": {
     "committee": "국방위원회, 국회운영위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "한정애": {
     "committee": "외교통일위원회",
-    "active": true
+    "active": true,
+    "party": "민주통합당/더불어민주당/더불어민주당/더불어민주당"
   },
   "한준호": {
     "committee": "과학기술정보방송통신위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "허영": {
     "committee": "국토교통위원회, 예산결산특별위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "홍기원": {
     "committee": "외교통일위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당"
   },
   "황운하": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/조국혁신당"
   },
   "황희": {
     "committee": "국토교통위원회",
-    "active": true
+    "active": true,
+    "party": "더불어민주당/더불어민주당/더불어민주당"
   }
 }
