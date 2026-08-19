@@ -1,0 +1,23 @@
+# 국회 일정 조회 진단용 — 손으로만 실행한다.
+# 상태 파일을 쓰지 않고 커밋도 슬랙 알림도 하지 않는다. 읽고 출력만 한다.
+name: 국회 일정 조회 진단
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 일정 조회 진단
+        env:
+          ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
+        run: python automation/schedule_debug.py
