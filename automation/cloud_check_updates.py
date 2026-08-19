@@ -27,13 +27,10 @@ def now_kst():
 
 WATCHED_SCHEDULE_COMMITTEES = {"국토교통위원회", "행정안전위원회", "법제사법위원회"}
 SCHEDULE_HORIZON_DAYS = 14
-# ALLSCHEDULE은 전체가 9만 건이 넘어서 다 읽을 수 없다(다 읽으려 3만 건을 긁었더니
-# 직후 호출이 전부 타임아웃했다 — 세게 긁으면 막힌다). 한 쪽은 작게 두고, 관심 구간
-# 행이 안 나오는 쪽이 연속으로 나오면 멈춘다.
-SCHEDULE_PAGE_SIZE = 300
-SCHEDULE_MAX_PAGES = 8
-SCHEDULE_EMPTY_PAGE_STOP = 2
-SCHEDULE_PAGE_DELAY_SEC = 0.5
+# ALLSCHEDULE은 전체가 9만 건이 넘고 SCH_DT 내림차순으로 내려온다. 쪽 단위로 긁으면
+# 먼 미래 일정이 등록될수록 관심 구간이 밀려나므로, 날짜로 직접 묻는다(하루 20건 안팎).
+SCHEDULE_DAY_PAGE_SIZE = 100
+SCHEDULE_DAY_DELAY_SEC = 0.3
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SNAPSHOT_PATH = os.path.join(BASE_DIR, "snapshot.json")
@@ -283,52 +280,47 @@ def check_new_meetings(key, snapshot):
     return changes, newest_date
 
 def fetch_schedule_rows(key):
-    """관심 구간(오늘~horizon)을 덮을 만큼만 ALLSCHEDULE을 읽어서 (행 목록, 성공 여부)를 돌려준다.
+    """관심 구간을 하루씩 끊어서 조회하고 (행 목록, 성공 여부)를 돌려준다.
 
-    전체는 9만 건이 넘어서 다 읽을 수 없다. 실제로 다 읽으려고 30쪽(3만 건)을 긁었더니
-    그 직후 같은 키의 호출이 12건 전부 타임아웃했다 — 세게 긁으면 API가 막힌다.
-    그래서 반대로 간다: 한 쪽은 작게(300건) 두고, 관심 구간 행이 더 안 나오면 멈춘다.
+    ALLSCHEDULE은 SCH_DT 필터를 지원한다(하루치가 20건 안팎이라 한 번에 다 온다).
+    쪽 단위로 긁던 방식은 이 API의 정렬이 SCH_DT 내림차순이라 위험했다 — 먼 미래
+    세미나가 등록될수록 앞으로 2주치가 1쪽 밖으로 밀려서, 조회는 성공하는데
+    관심 일정만 0건이 되는 날이 생겼다(2026-08-12·14). 날짜로 직접 물으면
+    정렬과 무관하게 항상 그날 전부를 받는다.
 
-    이 API는 날짜순이 아니라 등록/수정 최신순으로 내려주는 것으로 보인다(1쪽 300건이
-    2026-07-30~09-09에 걸쳐 있었다). 그래서 관심 구간 행이 한 쪽에 몰려 있지 않을 수
-    있어, 빈 쪽이 연속 2번 나올 때까지는 더 읽는다.
+    CMIT_NM·UNIT_CD 필터는 무시되므로(전체 건수가 그대로 나온다) 위원회 추림은
+    받아온 뒤에 한다.
     """
-    today = now_kst().strftime("%Y-%m-%d")
-    horizon = (now_kst() + timedelta(days=SCHEDULE_HORIZON_DAYS)).strftime("%Y-%m-%d")
-    rows, empty_streak = [], 0
-    for page in range(1, SCHEDULE_MAX_PAGES + 1):
+    rows = []
+    for i in range(SCHEDULE_HORIZON_DAYS + 1):
+        day = (now_kst() + timedelta(days=i)).strftime("%Y-%m-%d")
         url = ("https://open.assembly.go.kr/portal/openapi/ALLSCHEDULE"
-               "?KEY=%s&Type=json&pIndex=%d&pSize=%d" % (key, page, SCHEDULE_PAGE_SIZE))
+               "?KEY=%s&Type=json&pIndex=1&pSize=%d&SCH_DT=%s"
+               % (key, SCHEDULE_DAY_PAGE_SIZE, day))
         try:
             data = api_get(url)
         except Exception as e:
-            # 한 쪽이라도 실패하면 이번 실행은 판단하지 않는다. 반쪽짜리 목록으로 기억을
-            # 갱신하면 못 본 일정이 다음 실행에서 통째로 '새 일정'으로 튄다.
-            log("일정 조회 실패(%d쪽): %s" % (page, e))
+            # 하루라도 못 읽으면 이번 실행은 판단하지 않는다. 반쪽짜리 목록으로
+            # 기억을 갱신하면 못 본 일정이 다음 실행에서 '새 일정'으로 튄다.
+            log("일정 조회 실패(%s): %s" % (day, e))
             return rows, False
         body = data.get("ALLSCHEDULE")
         if body is None:
-            # 마지막 쪽을 지나면 INFO-200(데이터 없음)이 온다. 고장이 아니라 끝이다.
             code = (data.get("RESULT") or {}).get("CODE", "")
             if code.startswith("INFO-200"):
-                return rows, True
-            log("일정 조회 응답 이상(%d쪽): %s" % (page, code or data))
+                continue  # 그날은 일정이 없다 — 정상이다
+            log("일정 조회 응답 이상(%s): %s" % (day, code or data))
             return rows, False
         try:
-            page_rows = body[1]["row"]
+            day_rows = body[1]["row"]
         except Exception as e:
-            log("일정 조회 응답 파싱 실패(%d쪽): %s" % (page, e))
+            log("일정 조회 응답 파싱 실패(%s): %s" % (day, e))
             return rows, False
-        rows.extend(page_rows)
-        hits = sum(1 for r in page_rows
-                   if today <= (r.get("SCH_DT") or "").strip() <= horizon)
-        empty_streak = 0 if hits else empty_streak + 1
-        if len(page_rows) < SCHEDULE_PAGE_SIZE:
-            return rows, True
-        if empty_streak >= SCHEDULE_EMPTY_PAGE_STOP:
-            return rows, True
-        time.sleep(SCHEDULE_PAGE_DELAY_SEC)  # API를 몰아치지 않는다
-    log("일정 조회: 상한 %d쪽(%d건)까지 읽었다" % (SCHEDULE_MAX_PAGES, len(rows)))
+        if len(day_rows) >= SCHEDULE_DAY_PAGE_SIZE:
+            # 하루가 한 쪽을 넘긴 적은 없지만, 넘긴다면 뒷부분을 통째로 놓치게 된다.
+            log("!!! %s 일정이 %d건 — 한 쪽 한도라 잘렸을 수 있다" % (day, len(day_rows)))
+        rows.extend(day_rows)
+        time.sleep(SCHEDULE_DAY_DELAY_SEC)  # API를 몰아치지 않는다
     return rows, True
 
 
