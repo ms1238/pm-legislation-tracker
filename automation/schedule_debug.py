@@ -77,6 +77,40 @@ def main():
         print("  %s | SCH_KIND=%r | CMIT_NM=%r | %s"
               % (r.get("SCH_DT"), r.get("SCH_KIND"), r.get("CMIT_NM"), r.get("SCH_CN")))
 
+
+    # --- 쪽마다 어떤 날짜가 들어오는지: 정렬 규칙 추정 ---
+    print("\n=== 쪽별 날짜 분포(pSize=300) ===")
+    for page in (1, 2, 3, 5, 10):
+        u = ("https://open.assembly.go.kr/portal/openapi/ALLSCHEDULE"
+             "?KEY=%s&Type=json&pIndex=%d&pSize=300" % (key, page))
+        try:
+            rs = m.api_get(u)["ALLSCHEDULE"][1]["row"]
+        except Exception as e:
+            print("  %2d쪽: 조회 실패 %s" % (page, e))
+            continue
+        ds = sorted((r.get("SCH_DT") or "") for r in rs)
+        fut = sum(1 for d in ds if d >= today)
+        print("  %2d쪽: %d건 | 날짜 %s ~ %s | 오늘 이후 %d건 | 첫 행 SCH_DT=%s"
+              % (page, len(rs), ds[0], ds[-1], fut, rs[0].get("SCH_DT")))
+
+    # --- 요청 파라미터로 좁힐 수 있는지 ---
+    print("\n=== 요청 파라미터 필터 지원 여부 ===")
+    for label, extra in [("필터 없음", ""),
+                         ("CMIT_NM=국토교통위원회", "&CMIT_NM=%EA%B5%AD%ED%86%A0%EA%B5%90%ED%86%B5%EC%9C%84%EC%9B%90%ED%9A%8C"),
+                         ("SCH_KIND=위원회", "&SCH_KIND=%EC%9C%84%EC%9B%90%ED%9A%8C"),
+                         ("SCH_DT=2026-08-19", "&SCH_DT=2026-08-19"),
+                         ("UNIT_CD=100022", "&UNIT_CD=100022")]:
+        u = ("https://open.assembly.go.kr/portal/openapi/ALLSCHEDULE"
+             "?KEY=%s&Type=json&pIndex=1&pSize=5%s" % (key, extra))
+        try:
+            b = m.api_get(u)["ALLSCHEDULE"]
+            n = b[0]["head"][0]["list_total_count"]
+            r0 = b[1]["row"][0]
+            print("  %-24s → 전체 %d건, 첫 행: %s | %s | %s"
+                  % (label, n, r0.get("SCH_DT"), r0.get("CMIT_NM"), (r0.get("SCH_CN") or "")[:30]))
+        except Exception as e:
+            print("  %-24s → 실패/무응답: %s" % (label, e))
+
     ratio, summary = m.api_health()
     print("\nAPI 조회 상태: %s" % summary)
     return 0
