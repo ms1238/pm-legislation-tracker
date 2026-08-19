@@ -27,6 +27,10 @@ def now_kst():
 
 WATCHED_SCHEDULE_COMMITTEES = {"국토교통위원회", "행정안전위원회", "법제사법위원회"}
 SCHEDULE_HORIZON_DAYS = 14
+# ALLSCHEDULE은 한 쪽만 읽으면 앞으로 2주치가 그 쪽에 들어온다는 보장이 없다.
+# 끝까지 읽되, 응답이 이상해서 무한히 도는 일은 없도록 쪽수 상한을 둔다.
+SCHEDULE_PAGE_SIZE = 1000
+SCHEDULE_MAX_PAGES = 30
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SNAPSHOT_PATH = os.path.join(BASE_DIR, "snapshot.json")
@@ -275,13 +279,57 @@ def check_new_meetings(key, snapshot):
                 })
     return changes, newest_date
 
+def fetch_schedule_rows(key):
+    """ALLSCHEDULE을 마지막 쪽까지 읽어서 (행 목록, 끝까지 읽었는지)를 돌려준다.
+
+    예전에는 pIndex=1&pSize=300 한 쪽만 읽었다. 이 API는 앞으로 2주치가 그 한 쪽에
+    들어온다고 보장하지 않아서, 같은 일정이 하루는 잡히고 다음 날은 0건이 됐다
+    (2026-08-13 4건 → 08-14 0건 → 08-15 다시 2건, API 실패는 0%였다).
+    """
+    rows, total = [], None
+    for page in range(1, SCHEDULE_MAX_PAGES + 1):
+        url = ("https://open.assembly.go.kr/portal/openapi/ALLSCHEDULE"
+               "?KEY=%s&Type=json&pIndex=%d&pSize=%d" % (key, page, SCHEDULE_PAGE_SIZE))
+        try:
+            data = api_get(url)
+        except Exception as e:
+            log("일정 조회 실패(%d쪽): %s" % (page, e))
+            return rows, False
+        body = data.get("ALLSCHEDULE")
+        if body is None:
+            # 마지막 쪽을 지나 조회하면 INFO-200(데이터 없음)이 온다. 이건 고장이 아니라
+            # 끝에 도달했다는 뜻이므로 여기까지 읽은 것을 완전한 결과로 본다.
+            code = (data.get("RESULT") or {}).get("CODE", "")
+            if code.startswith("INFO-200"):
+                return rows, True
+            log("일정 조회 응답 이상(%d쪽): %s" % (page, code or data))
+            return rows, False
+        try:
+            page_rows = body[1]["row"]
+        except Exception as e:
+            log("일정 조회 응답 파싱 실패(%d쪽): %s" % (page, e))
+            return rows, False
+        if total is None:
+            try:
+                total = body[0]["head"][0]["list_total_count"]
+            except Exception:
+                total = None
+        rows.extend(page_rows)
+        if len(page_rows) < SCHEDULE_PAGE_SIZE:
+            return rows, True
+        if total is not None and len(rows) >= total:
+            return rows, True
+    log("일정 조회: %d쪽(%d건)에서 끊음 — 전체를 다 보지 못했다" % (SCHEDULE_MAX_PAGES, len(rows)))
+    return rows, False
+
+
 def check_schedule(key, snapshot):
-    url = "https://open.assembly.go.kr/portal/openapi/ALLSCHEDULE?KEY=%s&Type=json&pIndex=1&pSize=300" % key
-    try:
-        data = api_get(url)
-        rows = data.get("ALLSCHEDULE", [None, None])[1]["row"]
-    except Exception as e:
-        log("일정 조회 실패: %s" % e)
+    rows, complete = fetch_schedule_rows(key)
+    if not complete:
+        # 반쪽짜리 목록으로 판단하면 (1) 못 본 일정을 놓치고 (2) 본 것만 기억에 남겨
+        # 다음 실행에서 나머지가 통째로 '새 일정'으로 튄다. 이번 실행은 건너뛰고
+        # 기억은 그대로 둔다 — 다음 정상 실행이 밀린 것까지 한꺼번에 잡는다.
+        log("일정 확인 건너뜀 — 목록을 끝까지 읽지 못했다(%d건까지만 조회)" % len(rows))
         return [], []
     today = now_kst().strftime("%Y-%m-%d")
     horizon = (now_kst() + timedelta(days=SCHEDULE_HORIZON_DAYS)).strftime("%Y-%m-%d")
@@ -306,7 +354,13 @@ def check_schedule(key, snapshot):
             new_items.append(entry)
         if dt == today:
             today_items.append(entry)
-    snapshot["seen_schedule_keys"] = sorted(all_keys)
+    # 통째로 덮어쓰지 않는다. 어떤 날 조회 결과에 특정 일정이 빠지면 기억에서도 지워져
+    # 다음 날 같은 일정이 '새 일정'으로 다시 알려졌다(2026-08-15 중복 알림).
+    # 지난 날짜만 덜어내고 이번에 본 것을 더한다.
+    kept = {k for k in seen if k.split("|", 1)[0] >= today}
+    snapshot["seen_schedule_keys"] = sorted(kept | all_keys)
+    log("일정 %d건 조회 — 관심 일정 %d건, 신규 %d건, 오늘 %d건"
+        % (len(rows), len(relevant), len(new_items), len(today_items)))
     return new_items, today_items
 
 def send_slack(webhook_url, text):
