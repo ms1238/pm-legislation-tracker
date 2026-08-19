@@ -88,6 +88,7 @@ def main():
         except Exception as e:
             print("  %2d쪽: 조회 실패 %s" % (page, e))
             continue
+        m.time.sleep(0.5)
         ds = sorted((r.get("SCH_DT") or "") for r in rs)
         fut = sum(1 for d in ds if d >= today)
         print("  %2d쪽: %d건 | 날짜 %s ~ %s | 오늘 이후 %d건 | 첫 행 SCH_DT=%s"
@@ -110,6 +111,7 @@ def main():
                   % (label, n, r0.get("SCH_DT"), r0.get("CMIT_NM"), (r0.get("SCH_CN") or "")[:30]))
         except Exception as e:
             print("  %-24s → 실패/무응답: %s" % (label, e))
+        m.time.sleep(0.5)
 
     ratio, summary = m.api_health()
     print("\nAPI 조회 상태: %s" % summary)
