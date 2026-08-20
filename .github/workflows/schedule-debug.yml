@@ -9,6 +9,10 @@ on:
         description: "입법예고 감시를 함께 시험할 때 쓸 OC(비우면 일정 진단만 한다)"
         required: false
         type: string
+      inspect:
+        description: "한 건만 열어볼 입법예고 번호(ogLmPpSeq). 비우면 전체 감시를 시험한다."
+        required: false
+        type: string
 
 jobs:
   debug:
@@ -41,8 +45,14 @@ jobs:
           echo "::add-mask::$INPUT_OC"
           echo "oc=$INPUT_OC" >> "$GITHUB_OUTPUT"
 
+      - name: 입법예고 한 건 열어보기
+        if: ${{ inputs.oc != '' && inputs.inspect != '' }}
+        env:
+          LAWMAKING_OC: ${{ steps.oc.outputs.oc }}
+        run: python automation/notice_watch.py --inspect ${{ inputs.inspect }}
+
       - name: 입법예고 감시 시험 실행(슬랙·상태파일 없이)
-        if: ${{ inputs.oc != '' }}
+        if: ${{ inputs.oc != '' && inputs.inspect == '' }}
         env:
           LAWMAKING_OC: ${{ steps.oc.outputs.oc }}
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}

@@ -373,7 +373,55 @@ def build_assembly_blocks(found):
     return blocks
 
 
+def inspect(seq):
+    """한 건만 열어서 본문이 실제로 어떻게 오는지 본다.
+
+    "안 걸렸다"가 '본문에 그 말이 없다'인지 '본문이 안 왔다'인지 구분해야 키워드를
+    손볼지 수집을 손볼지 정할 수 있다.
+    """
+    xml = fetch("%s.xml?OC=%s&diff=0&pageSize=%d&pageIndex=1"
+                % (REST, urllib.parse.quote(oc()), PAGE_SIZE))
+    row = None
+    for page in range(1, MAX_PAGES + 1):
+        if page > 1:
+            xml = fetch("%s.xml?OC=%s&diff=0&pageSize=%d&pageIndex=%d"
+                        % (REST, urllib.parse.quote(oc()), PAGE_SIZE, page))
+        if not xml:
+            break
+        got = records(xml)
+        if not got:
+            break
+        for r in got:
+            if r.get("ogLmPpSeq") == str(seq):
+                row = r
+                break
+        if row:
+            break
+    if not row:
+        log("%s 는 진행중 목록에 없다" % seq)
+        row = {"ogLmPpSeq": str(seq)}
+    else:
+        log("목록 항목: %s" % {k: v for k, v in row.items() if k != "FileDownLink"})
+
+    cts = fetch_body(row)
+    if cts is None:
+        log("본문 조회 실패")
+        return 1
+    log("lmPpCts 길이 %d자" % len(cts))
+    log("키워드 적중: %s" % (", ".join(hits_in(cts)) or "없음"))
+    for probe in ["개인형", "이동장치", "킥보드", "자전거", "헬멧", "인명보호", "벌점", "별표"]:
+        i = cts.find(probe)
+        log("  '%s' %s" % (probe, ("%d번째 글자 — …%s…" % (i, cts[max(0, i-60):i+80])) if i >= 0 else "없음"))
+    log("본문 앞 600자: %s" % cts[:600])
+    return 0
+
+
 def main():
+    if "--inspect" in sys.argv:
+        if not oc():
+            log("LAWMAKING_OC 가 없다. 종료.")
+            return 1
+        return inspect(sys.argv[sys.argv.index("--inspect") + 1])
     dry = "--dry-run" in sys.argv
     limit = int(sys.argv[sys.argv.index("--limit") + 1]) if "--limit" in sys.argv else None
 
