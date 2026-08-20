@@ -49,25 +49,31 @@ def redact(text):
     return text
 
 
-def fetch(url, label=""):
+def fetch(url, label="", tries=3):
+    """러너에서 .go.kr 로 나가는 연결은 자주 끊긴다(한 실행은 국회 API까지 5/5
+    타임아웃이었다). 한 번 실패했다고 '자료가 없다'로 읽으면 안 되므로 재시도한다."""
     print("\n>>> GET %s  %s" % (redact(url), label))
     req = urllib.request.Request(url, headers=UA)
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-            raw = resp.read()
-            print("    HTTP %s | %s | %d bytes"
-                  % (resp.status, resp.headers.get("Content-Type", ""), len(raw)))
-            return resp.status, raw.decode("utf-8", "replace")
-    except urllib.error.HTTPError as e:
+    for attempt in range(1, tries + 1):
         try:
-            b = e.read().decode("utf-8", "replace")
-        except Exception:
-            b = ""
-        print("    HTTP %s (오류) | %d bytes" % (e.code, len(b)))
-        return e.code, b
-    except Exception as e:
-        print("    실패: %r" % (e,))
-        return None, ""
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                raw = resp.read()
+                print("    HTTP %s | %s | %d bytes%s"
+                      % (resp.status, resp.headers.get("Content-Type", ""), len(raw),
+                         "" if attempt == 1 else " (%d번째 시도)" % attempt))
+                return resp.status, raw.decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            try:
+                b = e.read().decode("utf-8", "replace")
+            except Exception:
+                b = ""
+            print("    HTTP %s (오류) | %d bytes" % (e.code, len(b)))
+            return e.code, b
+        except Exception as e:
+            print("    시도 %d/%d 실패: %r" % (attempt, tries, e))
+            if attempt < tries:
+                time.sleep(2 * attempt)
+    return None, ""
 
 
 def strip_tags(html):
