@@ -162,8 +162,12 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=1)
 
 
-def list_numbers(query=""):
-    """목록 화면 한 쪽에서 글 번호를 최신순으로 뽑는다."""
+def list_numbers(query="", titles=None):
+    """목록 화면 한 쪽에서 글 번호를 최신순으로 뽑는다.
+
+    제목도 같이 챙긴다. 상세 응답의 lsNm은 비어서 오는 일이 잦아서(실측),
+    알림에 쓸 제목은 목록 쪽이 더 믿을 만하다.
+    """
     html = fetch(LIST_URL + query)
     if html is None:
         return None
@@ -171,7 +175,21 @@ def list_numbers(query=""):
     if not body:
         log("목록에서 tbody를 못 찾았다 — 화면 구조가 바뀌었을 수 있다")
         return None
-    return [int(m) for m in re.findall(r'href="/gcom/ogLmPp/(\d+)"', body.group(1))]
+    pairs = re.findall(r'href="/gcom/ogLmPp/(\d+)"[^>]*title="([^"]*)"', body.group(1))
+    if titles is not None:
+        for no, title in pairs:
+            titles.setdefault(no, strip_tags(title))
+    return [int(no) for no, _ in pairs]
+
+
+def title_from_cts(cts):
+    """본문 머리말에서 제명을 건져 낸다.
+
+    번호로 구간을 메울 때는 목록 행이 없어 제목을 따로 얻을 데가 없다. 본문은
+    "⊙○○부공고제2026-1015호 <제명> 입법예고를 하는데 있어…"로 시작한다.
+    """
+    m = re.search(r"제\s*[\d\-]+\s*호\s*(.{4,90}?)\s*(?:입법예고|행정예고)", cts or "")
+    return m.group(1).strip() if m else ""
 
 
 def fetch_notice(seq):
@@ -211,7 +229,7 @@ def excerpt(text, keyword, width=120):
     return ("…" if s else "") + text[s:s + width] + "…"
 
 
-def targets(state, seen):
+def targets(state, seen, titles):
     """이번에 본문을 읽어야 할 번호를 정한다.
 
     두 갈래를 합친다.
@@ -220,14 +238,14 @@ def targets(state, seen):
          1쪽 밖으로 밀려난 예고도 여기서 걸린다(요청 9회).
     둘 다 '아직 본문을 안 읽은 번호'만 남기므로, 평소 본문 조회는 새 글 수만큼이다.
     """
-    nums = list_numbers()
+    nums = list_numbers(titles=titles)
     if nums is None:
         return None
     log("목록 1쪽 %d건 (최신 %s)" % (len(nums), max(nums) if nums else "-"))
 
     picked = set(nums)
     for kw in WATCH_LAWS:
-        found = list_numbers("?lsNm=%s" % urllib.parse.quote(kw))
+        found = list_numbers("?lsNm=%s" % urllib.parse.quote(kw), titles=titles)
         if found is None:
             continue
         new_here = set(found) - picked
@@ -295,7 +313,8 @@ def main():
     log("상태: 마지막으로 본 번호 %s, 본문을 읽어 둔 예고 %d건"
         % (max_seq or "(첫 실행)", len(seen)))
 
-    todo = targets(state, seen)
+    titles = {}
+    todo = targets(state, seen, titles)
     if todo is None:
         log("목록을 못 읽었다. 상태를 건드리지 않고 종료한다.")
         return 1
@@ -314,6 +333,8 @@ def main():
         seen.add(str(seq))
         if not notice:
             continue          # 빈 번호
+        notice["lsNm"] = (titles.get(str(seq)) or notice["lsNm"]
+                          or title_from_cts(notice["cts"]) or "입법예고 %s" % seq)
         hits = hits_in(notice["lsNm"] + " " + notice["cts"])
         if not hits or str(seq) in alerted:
             continue
