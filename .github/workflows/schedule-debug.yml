@@ -45,6 +45,11 @@ jobs:
           echo "::add-mask::$OC"
           echo "oc=$OC" >> "$GITHUB_OUTPUT"
 
+      - name: 본문까지 뒤지는 검색이 있는지 진단
+        env:
+          LAWMAKING_OC: ${{ steps.oc.outputs.oc }}
+        run: python automation/lawmaking_probe.py
+
       - name: 입법예고 감시 시험 실행(슬랙·상태파일 없이)
         env:
           LAWMAKING_OC: ${{ steps.oc.outputs.oc }}

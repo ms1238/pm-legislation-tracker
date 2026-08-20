@@ -1,197 +1,119 @@
 # -*- coding: utf-8 -*-
-"""국민참여입법센터(입법예고) 조회 경로 진단용 스크립트.
+"""국민참여입법센터에 '본문까지 뒤지는 검색'이 있는지 확인하는 진단 스크립트.
 
-목적: "킥보드·개인형 이동장치·자전거·전기자전거 관련 입법예고가 뜨면 알림"을
-      붙일 수 있는지, 붙인다면 어떤 경로로 붙일지 확정한다.
+왜 이걸 따로 보는가:
+  키워드로 한 번 검색해서 걸린 것만 보면 제일 싸다. 그런데 목록 화면의 검색
+  필드(lsNm)는 법령 제명만 본다 — 실측으로 '킥보드' 0건, '이동장치' 0건이었다.
+  본문을 훑는 검색이 어딘가에 따로 있다면 감시 방식을 통째로 그쪽으로 바꾸는 게
+  맞다. 그래서 (1) lsNm이 정말 제목만 보는지 못 박고, (2) 사이트 통합검색을 찾는다.
 
-성격: schedule_debug.py와 같은 진단 도구다. 상태 파일을 쓰지 않고, 슬랙도 보내지
-      않는다. 읽고 출력만 한다. 손으로만 실행한다.
-
-주의: lawmaking.go.kr 도메인은 개발 컨테이너의 egress 정책에서 막혀 있다.
-      GitHub Actions 러너에서 실행하는 것을 전제로 한다.
-
-여기까지 확인한 것:
-  - 상세 조회 API는 OC 인증으로 러너에서 그냥 통한다(등록 IP 검증 없음).
-      https://www.lawmaking.go.kr/rest/ogLmPpMod/{ogLmPpSeq}/{mappingLbicId}/{announceType}.xml?OC=...
-    잘못된 OC는 <result><retMsg>401</retMsg></result> 를 준다.
-    응답 필드: ogLmPpSeq, lsNm, asndOfiNm, asndDptNm, lmTpNm, lsClsNm,
-               stYd, edYd, telNo, faxNo, email, modDt, status, readCnt, lmPpCts.
-    우리가 키워드를 걸 자리는 lmPpCts(예고 본문)다.
-  - 목록 화면(opinion.lawmaking.go.kr/gcom/ogLmPp)은 서버가 그린 HTML이고,
-    각 행은 /gcom/ogLmPp/{번호} 로 이어진다(예: 88178).
-  - lsNm(제명) 검색은 GET으로 먹지만 제명만 본다.
-    '자전거' 1건, '도로교통' 2건(종료포함 6건), '킥보드'·'이동장치' 0건 —
-    즉 제명 검색만으로는 PM 관련 개정을 놓친다. 본문을 봐야 한다.
-
-남은 미해결 하나: 목록의 번호(88178)와 API가 요구하는 ogLmPpSeq(28212) ·
-mappingLbicId(2000000141134) 가 서로 다르다. 이 둘을 어디서 얻는지가
-자동 감시의 마지막 조각이다. 이번 진단은 그걸 찾는다.
-
-OC(승인 아이디)는 LAWMAKING_OC 환경변수로 받는다. 이 저장소는 퍼블릭이므로
-파일에 적지 않고, 출력할 때도 가린다.
+성격: 진단 도구다. 상태 파일을 쓰지 않고 슬랙도 보내지 않는다. 손으로만 실행한다.
+주의: lawmaking.go.kr 은 개발 컨테이너에서 막혀 있어 러너에서만 돈다.
 """
-import os, re, sys, time, urllib.request, urllib.parse, urllib.error
+import os, re, sys, time, urllib.request, urllib.parse
 
-OC = os.environ.get("LAWMAKING_OC", "").strip()
 UA = {"User-Agent": "Mozilla/5.0 (compatible; pm-legislation-tracker/1.0)"}
 TIMEOUT = 25
-
-LIST_URL = "https://opinion.lawmaking.go.kr/gcom/ogLmPp"
-REST_BASE = "https://www.lawmaking.go.kr/rest/ogLmPpMod"
-
-KEYWORDS = ["개인형 이동장치", "개인형이동장치", "전동킥보드", "킥보드",
-            "자전거", "전기자전거", "퍼스널 모빌리티", "퍼스널모빌리티"]
+HOST = "https://opinion.lawmaking.go.kr"
+LIST_URL = HOST + "/gcom/ogLmPp"
 
 
-def redact(text):
-    if OC and text:
-        return text.replace(OC, "***OC***")
-    return text
-
-
-def fetch(url, label="", tries=3):
-    """러너에서 .go.kr 로 나가는 연결은 자주 끊긴다(한 실행은 국회 API까지 5/5
-    타임아웃이었다). 한 번 실패했다고 '자료가 없다'로 읽으면 안 되므로 재시도한다."""
-    print("\n>>> GET %s  %s" % (redact(url), label))
+def fetch(url, tries=2):
+    print("\n>>> GET %s" % url)
     req = urllib.request.Request(url, headers=UA)
     for attempt in range(1, tries + 1):
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                 raw = resp.read()
-                print("    HTTP %s | %s | %d bytes%s"
-                      % (resp.status, resp.headers.get("Content-Type", ""), len(raw),
-                         "" if attempt == 1 else " (%d번째 시도)" % attempt))
-                return resp.status, raw.decode("utf-8", "replace")
-        except urllib.error.HTTPError as e:
-            try:
-                b = e.read().decode("utf-8", "replace")
-            except Exception:
-                b = ""
-            print("    HTTP %s (오류) | %d bytes" % (e.code, len(b)))
-            return e.code, b
+                print("    HTTP %s | %d bytes" % (resp.status, len(raw)))
+                return raw.decode("utf-8", "replace")
         except Exception as e:
             print("    시도 %d/%d 실패: %r" % (attempt, tries, e))
             if attempt < tries:
-                time.sleep(2 * attempt)
-    return None, ""
+                time.sleep(2)
+    return None
 
 
 def strip_tags(html):
     t = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
     t = re.sub(r"<[^>]+>", " ", t)
-    for a, b in [("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
-                 ("&quot;", '"'), ("&middot;", "·"), ("&ldquo;", '"'), ("&rdquo;", '"')]:
+    for a, b in [("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"')]:
         t = t.replace(a, b)
     return re.sub(r"\s+", " ", t).strip()
 
 
-def show(text, limit, label="본문"):
-    text = redact(text)
-    print("--- %s (%d자 중 %d자) ---" % (label, len(text), min(limit, len(text))))
-    print(text[:limit])
-    if len(text) > limit:
-        print("... (이하 생략)")
-    print("--- 끝 ---")
+def count_of(html):
+    m = re.search(r"전체\s*([\d,]+)\s*건", strip_tags(html or ""))
+    return m.group(1) if m else "?"
 
 
-def list_rows(query=""):
-    """목록 화면에서 (번호, 제명, 부처) 를 뽑는다."""
-    st, html = fetch(LIST_URL + query, "(목록)")
-    if st != 200 or not html:
-        return []
-    rows = []
-    body = re.search(r"<tbody[^>]*>(.*?)</tbody>", html, re.S | re.I)
+def rows_of(html):
+    body = re.search(r"<tbody[^>]*>(.*?)</tbody>", html or "", re.S | re.I)
     if not body:
         return []
-    for tr in re.findall(r"<tr[^>]*>.*?</tr>", body.group(1), re.S | re.I):
-        a = re.search(r'href="/gcom/ogLmPp/(\d+)"[^>]*title="([^"]*)"', tr)
-        if not a:
-            continue
-        offices = re.findall(r"<p>([^<]+)</p>", tr)
-        rows.append((a.group(1), a.group(2), offices[0].strip() if offices else ""))
-    return rows
+    return re.findall(r'href="/gcom/ogLmPp/(\d+)"[^>]*title="([^"]*)"', body.group(1))
 
 
-def step1_detail_page(no, title):
-    """상세 화면 HTML에서 ogLmPpSeq / mappingLbicId / announceType 을 찾는다."""
-    print("\n" + "-" * 70)
-    print("상세 화면 %s — %s" % (no, title))
-    print("-" * 70)
-    st, html = fetch("https://opinion.lawmaking.go.kr/gcom/ogLmPp/%s" % no, "(상세 화면)")
-    if st != 200 or not html:
-        return None
+def step1_is_title_only():
+    """lsNm이 제목만 보는지 못 박는다.
 
-    found = {}
-    for name in ["ogLmPpSeq", "mappingLbicId", "announceType", "lbicId", "lsiSeq", "TYPE"]:
-        hits = [m.start() for m in re.finditer(name, html)]
-        print("    '%s' 등장 %d회" % (name, len(hits)))
-        for pos in hits[:2]:
-            show(html[max(0, pos - 200): pos + 200], 420, "'%s' 주변" % name)
-        v = re.search(r"%s['\"]?\s*[:=]\s*['\"]?(\w+)" % name, html)
-        if v:
-            found[name] = v.group(1)
-
-    # 긴 숫자(mappingLbicId 후보)가 화면 어딘가에 박혀 있을 수 있다.
-    longs = sorted(set(re.findall(r"\b(\d{11,14})\b", html)))
-    print("    11~14자리 숫자 후보: %s" % (longs[:10] or "(없음)"))
-
-    txt = strip_tags(html)
-    hits = [k for k in KEYWORDS if k in txt]
-    print("    상세 화면 텍스트 %d자, 키워드 적중: %s" % (len(txt), ", ".join(hits) or "없음"))
-    print("    발견한 식별자: %s" % (found or "(없음)"))
-    return found, longs
+    '행정절차법'은 거의 모든 예고 본문에 나오지만(제41조에 따라 공고) 제명에는
+    안 나온다. 여기서 0건이면 제목 검색이 확실하다.
+    """
+    print("\n" + "=" * 70)
+    print("STEP 1. 목록 검색(lsNm)이 제목만 보는가")
+    print("=" * 70)
+    for kw, why in [("행정절차법", "본문에는 거의 다 나오고 제명에는 없는 말"),
+                    ("개정이유", "본문 머리말에 늘 나오는 말"),
+                    ("자전거", "제명에 실제로 있는 말(대조군)")]:
+        html = fetch("%s?lsNm=%s&finishIncludeYn=Y" % (LIST_URL, urllib.parse.quote(kw)))
+        print("    '%s' (%s) → 전체 %s건" % (kw, why, count_of(html)))
+        time.sleep(0.4)
 
 
-def step2_rest(seq, lbic, atype="TYPE5"):
-    """찾은 식별자로 실제 API를 부른다."""
-    url = "%s/%s/%s/%s.xml?OC=%s" % (REST_BASE, seq, lbic, atype, OC)
-    st, body = fetch(url, "(REST 상세)")
-    if not body:
+def step2_find_search():
+    """사이트 통합검색을 찾는다. 폼과 링크를 있는 그대로 본다."""
+    print("\n" + "=" * 70)
+    print("STEP 2. 통합검색 입구 찾기")
+    print("=" * 70)
+    html = fetch(HOST + "/")
+    if not html:
         return
-    m = re.search(r"<lmPpCts>(.*?)</lmPpCts>", body, re.S)
-    nm = re.search(r"<lsNm>(.*?)</lsNm>", body, re.S)
-    print("    lsNm: %s" % (strip_tags(nm.group(1)) if nm else "(없음)"))
-    if m:
-        cts = strip_tags(m.group(1))
-        print("    lmPpCts %d자, 키워드 적중: %s"
-              % (len(cts), ", ".join(k for k in KEYWORDS if k in cts) or "없음"))
-        show(cts, 600, "lmPpCts 앞부분")
-    else:
-        show(body, 500, "응답")
+    for m in re.finditer(r"<form[^>]*>", html, re.I):
+        print("    form: %s" % m.group(0)[:220])
+    names = sorted(set(re.findall(r'<input[^>]*\bname=["\']([^"\']+)["\']', html)))
+    print("    첫 화면 input name: %s" % ", ".join(names))
+    hrefs = sorted({h for h in re.findall(r'href="([^"]+)"', html)
+                    if re.search(r"search|Search|srch|totl|통합", h)})
+    print("    검색으로 보이는 링크: %s" % (hrefs[:20] or "(없음)"))
+
+
+def step3_try_search_urls():
+    """흔한 통합검색 주소를 찔러 본다. '킥보드'가 걸리는 곳이 있으면 그게 답이다."""
+    print("\n" + "=" * 70)
+    print("STEP 3. 통합검색 주소 후보 실측 ('킥보드')")
+    print("=" * 70)
+    kw = urllib.parse.quote("킥보드")
+    for path in ["/gcom/search?query=%s", "/gcom/totalSearch?query=%s",
+                 "/search?query=%s", "/gcom/srch?srchWrd=%s",
+                 "/gcom/ogLmPp?lmPpCts=%s", "/gcom/ogLmPp?srchCts=%s"]:
+        url = HOST + (path % kw)
+        html = fetch(url, tries=1)
+        if html is None:
+            continue
+        found = rows_of(html)
+        text = strip_tags(html)
+        print("    → 전체 %s건 | 행 %d개 | '킥보드' 본문 포함: %s"
+              % (count_of(html), len(found), "킥보드" in text))
+        for no, title in found[:5]:
+            print("       · %s %s" % (no, title))
+        time.sleep(0.4)
 
 
 def main():
-    print("입법예고 조회 경로 진단 시작 (OC %s)" % ("설정됨" if OC else "없음"))
-
-    print("\n" + "=" * 70)
-    print("STEP 1. 목록 훑기")
-    print("=" * 70)
-    rows = list_rows()
-    print("    목록 행 %d개. 앞 5개:" % len(rows))
-    for r in rows[:5]:
-        print("      %s | %s | %s" % r)
-
-    bike = list_rows("?lsNm=%s" % urllib.parse.quote("자전거"))
-    print("\n    '자전거' 검색 행 %d개:" % len(bike))
-    for r in bike:
-        print("      %s | %s | %s" % r)
-
-    print("\n" + "=" * 70)
-    print("STEP 2. 상세 화면에서 API 식별자 찾기")
-    print("=" * 70)
-    targets = (bike[:1] + rows[:1])
-    for no, title, office in targets:
-        res = step1_detail_page(no, title)
-        if not res:
-            continue
-        found, longs = res
-        # 화면에서 찾은 값으로, 안 되면 목록 번호를 seq로 놓고 시도한다.
-        seq = found.get("ogLmPpSeq", no)
-        for lbic in ([found["mappingLbicId"]] if "mappingLbicId" in found else longs[:2] or ["0"]):
-            for atype in ["TYPE5"]:
-                step2_rest(seq, lbic, atype)
-                time.sleep(0.3)
-
+    step1_is_title_only()
+    step2_find_search()
+    step3_try_search_urls()
     print("\n진단 끝.")
     return 0
 

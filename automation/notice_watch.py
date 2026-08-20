@@ -13,13 +13,21 @@
   같은 말은 본문에만 나온다. 그래서 본문(lmPpCts)까지 읽어야 한다.
 
 읽는 방법(실측으로 확정):
-  목록  : https://opinion.lawmaking.go.kr/gcom/ogLmPp   (서버가 그린 HTML)
-          각 행은 /gcom/ogLmPp/{번호} 로 이어진다.
-  본문  : https://www.lawmaking.go.kr/rest/ogLmPpMod/{번호}/{mappingLbicId}/TYPE5.xml?OC=...
+  목록  : https://opinion.lawmaking.go.kr/gcom/ogLmPp   (서버가 그린 HTML, 한 쪽 20건)
+          각 행은 /gcom/ogLmPp/{번호} 로 이어진다. 정렬은 최신순이다.
+  본문  : https://www.lawmaking.go.kr/rest/ogLmPpMod/{번호}/0/TYPE5.xml?OC=...
           목록의 번호를 ogLmPpSeq 자리에 그대로 넣으면 그 공고가 온다.
           응답 필드: ogLmPpSeq, lsNm, asndOfiNm, asndDptNm, lmTpNm, lsClsNm,
                      stYd, edYd, telNo, faxNo, email, modDt, status, readCnt, lmPpCts
           잘못된 OC 는 <result><retMsg>401</retMsg></result> 를 준다.
+
+왜 이렇게 적게 부르는가:
+  한 번 호출에 제명·부처·기간·본문이 다 온다. 그래서 목록은 "무엇이 새로 올라왔나"만
+  알면 되고, 그건 최신순 1쪽(20건)이면 충분하다 — 부처 입법예고는 하루 10건 안팎이고
+  이 감시는 하루 두 번 돈다. 평소 한 번 실행에 드는 호출은 [목록 1 + 새 글 수]다.
+
+  1쪽이 통째로 새 글이면 그때만 놓친 구간을 의심한다. 그 경우 HTML 쪽 넘김 대신
+  번호로 직접 메운다(ogLmPpSeq는 순번이다). 화면 구조에 덜 기대고, 요청도 적다.
 
 비밀값은 파일이 아니라 환경변수로 받는다(이 저장소는 퍼블릭이다):
       LAWMAKING_OC        국민참여입법센터 승인 아이디
@@ -28,9 +36,9 @@
 
 인자:
   --dry-run   슬랙을 보내지 않고 상태 파일도 쓰지 않는다. 판정만 출력한다.
-  --limit N   본문을 읽을 건수 상한(첫 실행처럼 밀린 게 많을 때 쓴다).
+  --limit N   본문을 읽을 건수 상한(밀린 게 많을 때 나눠 읽는다).
 """
-import json, os, re, sys, time, urllib.request, urllib.parse, urllib.error
+import json, os, re, sys, time, urllib.request, urllib.parse
 from datetime import datetime, timedelta, timezone
 
 KST = timezone(timedelta(hours=9))
@@ -45,8 +53,14 @@ REST_URL = "https://www.lawmaking.go.kr/rest/ogLmPpMod/%s/0/TYPE5.xml?OC=%s"
 UA = {"User-Agent": "Mozilla/5.0 (compatible; pm-legislation-tracker/1.0)"}
 TIMEOUT = 25
 DELAY_SEC = 0.4
-# 한 쪽 20건. 첫 실행이나 오래 밀린 실행이 아니면 1~2쪽에서 끝난다.
-MAX_PAGES = 15
+
+# 1쪽이 전부 새 글일 때만 번호로 구간을 메운다. 이 상한을 넘도록 밀렸으면
+# 조용히 반쯤 훑는 대신 밀렸다고 알리는 편이 낫다.
+MAX_GAP_FILL = 120
+
+# 첫 실행에는 과거 번호를 알 수 없다. 이미 열려 있는 관심 예고를 놓치지 않도록
+# 제명 검색으로 한 번만 훑는다. 제명에 걸리는 말만 넣는다(본문 검색은 안 된다).
+FIRST_RUN_SEARCHES = ["도로교통", "자전거", "이륜", "주차장"]
 
 # 이 트래커가 찾는 말. '자전거'는 '자전거도로'·'전기자전거'까지 함께 걸리라고
 # 통째로 둔다 — 이 분야에서 넓게 거는 쪽이 놓치는 쪽보다 낫다.
@@ -118,7 +132,7 @@ def load_state():
         with open(STATE_PATH, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        return {"seen": [], "alerted": [], "page_param": None, "last_run": None}
+        return {"max_seq": 0, "alerted": [], "last_run": None}
 
 
 def save_state(state):
@@ -127,107 +141,39 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=1)
 
 
-def parse_page(html):
-    """목록 화면 한 쪽에서 (번호, 제명, 소관부처)를 뽑는다."""
+def list_numbers(query=""):
+    """목록 화면 한 쪽에서 글 번호를 최신순으로 뽑는다."""
+    html = fetch(LIST_URL + query)
+    if html is None:
+        return None
     body = re.search(r"<tbody[^>]*>(.*?)</tbody>", html, re.S | re.I)
     if not body:
-        return None
-    rows = []
-    for tr in re.findall(r"<tr[^>]*>.*?</tr>", body.group(1), re.S | re.I):
-        a = re.search(r'href="/gcom/ogLmPp/(\d+)"[^>]*title="([^"]*)"', tr)
-        if not a:
-            continue
-        ps = [strip_tags(p) for p in re.findall(r"<p>(.*?)</p>", tr, re.S)]
-        rows.append({
-            "no": a.group(1),
-            "title": strip_tags(a.group(2)),
-            "office": ps[0] if ps else "",
-        })
-    return rows
-
-
-def find_page_param(first_nos):
-    """쪽 넘김 파라미터 이름을 실측으로 찾는다.
-
-    목록 폼에는 쪽 번호 필드가 없다(자바스크립트가 넣는다). 이름을 문서에서
-    확인할 방법이 없으므로, 2쪽을 요청해 1쪽과 행이 달라지는 이름을 채택한다.
-    한 번 찾으면 상태 파일에 적어 두고 다음 실행부터는 건너뛴다.
-    """
-    for name in ["pageIndex", "pageNo", "currentPageNo", "cpage", "page", "pageUnit"]:
-        html = fetch("%s?%s=2" % (LIST_URL, name), tries=1)
-        if not html:
-            continue
-        rows = parse_page(html) or []
-        if rows and {r["no"] for r in rows} - first_nos:
-            log("쪽 넘김 파라미터는 '%s' 다" % name)
-            return name
-        time.sleep(DELAY_SEC)
-    log("쪽 넘김 파라미터를 못 찾았다 — 1쪽(최신 20건)만 본다")
-    return None
-
-
-def fetch_list(seen, page_param, max_pages=MAX_PAGES):
-    """목록을 최신순으로 훑는다.
-
-    한 쪽은 20건인데 열려 있는 예고는 200건이 넘는다. 평소에는 새 글이 1쪽 안에
-    다 있지만, 실행이 며칠 밀리거나 하루에 많이 올라오면 2쪽으로 넘어간다.
-    그래서 '이 쪽이 전부 이미 본 글'이면 거기서 멈추고, 아니면 계속 넘긴다.
-    """
-    html = fetch(LIST_URL)
-    if not html:
-        return None, page_param
-    first = parse_page(html)
-    if first is None:
         log("목록에서 tbody를 못 찾았다 — 화면 구조가 바뀌었을 수 있다")
-        return None, page_param
-
-    total = re.search(r"전체\s*([\d,]+)\s*건", strip_tags(html))
-    log("목록 1쪽 %d건 (사이트가 밝힌 전체 %s건)"
-        % (len(first), total.group(1) if total else "?"))
-
-    rows = list(first)
-    known = {r["no"] for r in first}
-    if all(r["no"] in seen for r in first) and seen:
-        return rows, page_param  # 새 글이 없다 — 더 넘길 이유가 없다
-
-    if page_param is None:
-        page_param = find_page_param(known)
-    if page_param is None:
-        return rows, None
-
-    for page in range(2, max_pages + 1):
-        html = fetch("%s?%s=%d" % (LIST_URL, page_param, page))
-        if not html:
-            break
-        more = parse_page(html) or []
-        fresh_nos = {r["no"] for r in more} - known
-        if not fresh_nos:
-            log("%d쪽에서 새 행이 없어 멈춘다(총 %d건 수집)" % (page, len(rows)))
-            break
-        rows += [r for r in more if r["no"] in fresh_nos]
-        known |= fresh_nos
-        time.sleep(DELAY_SEC)
-        if all(r["no"] in seen for r in more) and seen:
-            log("%d쪽이 전부 이미 본 글이라 멈춘다(총 %d건 수집)" % (page, len(rows)))
-            break
-    return rows, page_param
+        return None
+    return [int(m) for m in re.findall(r'href="/gcom/ogLmPp/(\d+)"', body.group(1))]
 
 
-def fetch_body(no):
-    """예고 본문(lmPpCts)과 몇몇 메타를 돌려준다."""
+def fetch_notice(seq):
+    """한 건의 제명·부처·기간·본문을 한 번에 가져온다.
+
+    번호가 비었거나 다른 유형이면 lsNm·lmPpCts가 비어서 온다. 그건 '없는 글'로
+    보고 넘긴다(구간 메우기에서 실제로 생긴다).
+    """
     oc = os.environ.get("LAWMAKING_OC", "").strip()
-    xml = fetch(REST_URL % (no, urllib.parse.quote(oc)))
-    if not xml:
+    xml = fetch(REST_URL % (seq, urllib.parse.quote(oc)))
+    if xml is None:
         return None
     if "<retMsg>401</retMsg>" in xml:
         log("OC 인증 실패(401) — LAWMAKING_OC 를 확인해야 한다")
         return None
-    out = {}
-    for tag in ["lsNm", "asndOfiNm", "asndDptNm", "lsClsNm", "stYd", "edYd", "telNo"]:
+    out = {"no": str(seq)}
+    for tag in ["lsNm", "asndOfiNm", "asndDptNm", "lsClsNm", "stYd", "edYd"]:
         m = re.search(r"<%s>(.*?)</%s>" % (tag, tag), xml, re.S)
         out[tag] = strip_tags(m.group(1)) if m else ""
     m = re.search(r"<lmPpCts>(.*?)</lmPpCts>", xml, re.S)
     out["cts"] = strip_tags(m.group(1)) if m else ""
+    if not out["lsNm"] and not out["cts"]:
+        return {}      # 빈 번호 — 실패가 아니다
     return out
 
 
@@ -244,6 +190,44 @@ def excerpt(text, keyword, width=120):
     return ("…" if s else "") + text[s:s + width] + "…"
 
 
+def targets(state):
+    """이번에 본문을 읽어야 할 번호를 정한다.
+
+    평소: 1쪽에서 아직 안 본 번호만. 1쪽이 통째로 새 글이면 그 아래로 밀린
+    구간이 있다는 뜻이라, 화면을 더 넘기는 대신 번호를 직접 이어 붙인다.
+    """
+    nums = list_numbers()
+    if nums is None:
+        return None
+    log("목록 1쪽 %d건 (최신 %s)" % (len(nums), max(nums) if nums else "-"))
+
+    max_seq = int(state.get("max_seq") or 0)
+    if not max_seq:
+        # 첫 실행. 과거 번호를 모르니 1쪽 + 제명 검색으로 지금 열린 것만 훑는다.
+        picked = list(nums)
+        for kw in FIRST_RUN_SEARCHES:
+            found = list_numbers("?lsNm=%s&finishIncludeYn=Y" % urllib.parse.quote(kw))
+            if found:
+                log("첫 실행 제명 검색 '%s' → %d건" % (kw, len(found)))
+                picked += found
+            time.sleep(DELAY_SEC)
+        return sorted(set(picked), reverse=True)
+
+    fresh = [n for n in nums if n > max_seq]
+    if len(fresh) < len(nums):
+        return sorted(fresh, reverse=True)
+
+    # 1쪽이 전부 새 글 — 그 아래가 잘렸다. 번호로 메운다.
+    gap = [n for n in range(max_seq + 1, max(nums)) if n not in set(nums)]
+    if len(gap) > MAX_GAP_FILL:
+        log("밀린 구간이 %d개로 상한(%d)을 넘는다 — 최근 것부터 채운다"
+            % (len(gap), MAX_GAP_FILL))
+        gap = gap[-MAX_GAP_FILL:]
+    log("1쪽이 전부 새 글이라 번호 %d~%d 구간 %d개를 함께 확인한다"
+        % (max_seq + 1, max(nums), len(gap)))
+    return sorted(set(fresh) | set(gap), reverse=True)
+
+
 def slack_send(webhook, text, blocks):
     payload = {"text": text, "blocks": blocks}
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -254,11 +238,11 @@ def slack_send(webhook, text, blocks):
 
 
 def build_blocks(found):
-    lines = ["*🛴 입법예고 알림 — 관심 키워드 %d건*" % len(found)]
-    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": lines[0]}}]
+    head = "*🛴 입법예고 알림 — 관심 키워드 %d건*" % len(found)
+    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": head}}]
     for f in found:
-        txt = ("*<%s|%s>*\n%s · %s\n예고기간 %s ~ %s\n적중: `%s`\n> %s"
-               % (DETAIL_PAGE % f["no"], f["title"], f["office"], f["lsClsNm"],
+        txt = ("*<%s|%s>*\n%s\n예고기간 %s ~ %s\n적중: `%s`\n> %s"
+               % (DETAIL_PAGE % f["no"], f["lsNm"], f["asndOfiNm"],
                   f["stYd"], f["edYd"], "`, `".join(f["hits"]), f["excerpt"]))
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": txt}})
     return "입법예고 알림 %d건" % len(found), blocks
@@ -266,12 +250,9 @@ def build_blocks(found):
 
 def main():
     dry = "--dry-run" in sys.argv
-    limit = None
-    if "--limit" in sys.argv:
-        limit = int(sys.argv[sys.argv.index("--limit") + 1])
+    limit = int(sys.argv[sys.argv.index("--limit") + 1]) if "--limit" in sys.argv else None
 
-    oc = os.environ.get("LAWMAKING_OC", "").strip()
-    if not oc:
+    if not os.environ.get("LAWMAKING_OC", "").strip():
         log("LAWMAKING_OC 환경변수가 없다. 종료.")
         return 1
     webhook = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
@@ -280,46 +261,35 @@ def main():
         return 1
 
     state = load_state()
-    seen = set(state.get("seen", []))
     alerted = set(state.get("alerted", []))
-    first_run = not seen
-    log("상태 파일: 본 적 있는 예고 %d건%s" % (len(seen), " (첫 실행)" if first_run else ""))
+    max_seq = int(state.get("max_seq") or 0)
+    log("상태: 마지막으로 본 번호 %s" % (max_seq or "(첫 실행)"))
 
-    rows, page_param = fetch_list(seen, state.get("page_param"))
-    if rows is None:
+    todo = targets(state)
+    if todo is None:
         log("목록을 못 읽었다. 상태를 건드리지 않고 종료한다.")
         return 1
-    log("목록에서 모은 예고 %d건" % len(rows))
+    log("본문을 읽을 대상 %d건" % len(todo))
+    if limit and len(todo) > limit:
+        log("이번엔 %d건만 읽는다(나머지는 다음 실행에서 본다)" % limit)
+        todo = todo[:limit]
 
-    fresh = [r for r in rows if r["no"] not in seen]
-    log("이번에 새로 본 예고 %d건" % len(fresh))
-    if limit and len(fresh) > limit:
-        log("본문 조회를 %d건으로 제한한다(나머지는 다음 실행에서 본다)" % limit)
-        fresh = fresh[:limit]
-
-    found = []
-    for r in fresh:
-        detail = fetch_body(r["no"])
+    found, read_ok = [], []
+    for seq in todo:
+        notice = fetch_notice(seq)
         time.sleep(DELAY_SEC)
-        if detail is None:
-            continue  # 못 읽은 건은 seen 에 넣지 않는다 — 다음 실행에서 다시 본다
-        text = r["title"] + " " + detail["cts"]
-        hits = hits_in(text)
-        seen.add(r["no"])
-        if not hits:
+        if notice is None:
+            continue          # 못 읽었다 — max_seq를 올리지 않아 다음에 다시 본다
+        read_ok.append(seq)
+        if not notice:
+            continue          # 빈 번호
+        hits = hits_in(notice["lsNm"] + " " + notice["cts"])
+        if not hits or str(seq) in alerted:
             continue
-        if r["no"] in alerted:
-            continue
-        found.append({
-            "no": r["no"],
-            "title": detail["lsNm"] or r["title"],
-            "office": detail["asndOfiNm"] or r["office"],
-            "lsClsNm": detail["lsClsNm"],
-            "stYd": detail["stYd"], "edYd": detail["edYd"],
-            "hits": hits,
-            "excerpt": excerpt(detail["cts"], hits[0]),
-        })
-        log("적중 %s | %s | %s" % (r["no"], detail["lsNm"] or r["title"], ", ".join(hits)))
+        notice["hits"] = hits
+        notice["excerpt"] = excerpt(notice["cts"], hits[0])
+        found.append(notice)
+        log("적중 %s | %s | %s" % (seq, notice["lsNm"], ", ".join(hits)))
 
     ratio, health = api_health()
     log("조회 상태: %s" % health)
@@ -333,8 +303,7 @@ def main():
             log("--dry-run: 슬랙 전송 생략. 보냈을 내용:")
             print(json.dumps(blocks, ensure_ascii=False, indent=1))
         else:
-            status = slack_send(webhook, text, blocks)
-            log("슬랙 전송 완료 (HTTP %s), %d건" % (status, len(found)))
+            log("슬랙 전송 완료 (HTTP %s), %d건" % (slack_send(webhook, text, blocks), len(found)))
             alerted.update(f["no"] for f in found)
     else:
         log("관심 키워드에 걸린 새 입법예고 없음.")
@@ -343,11 +312,12 @@ def main():
         log("--dry-run: 상태 파일도 쓰지 않는다.")
         return 0
 
-    state["page_param"] = page_param
-    state["seen"] = sorted(seen, key=int, reverse=True)[:2000]
+    # 끝까지 읽은 번호까지만 진도로 인정한다. 못 읽은 건 다음 실행이 다시 본다.
+    if read_ok:
+        state["max_seq"] = max(max_seq, max(read_ok))
     state["alerted"] = sorted(alerted, key=int, reverse=True)[:500]
     save_state(state)
-    log("상태 갱신 완료 (seen %d건, alerted %d건)" % (len(state["seen"]), len(state["alerted"])))
+    log("상태 갱신 완료 (max_seq %s, alerted %d건)" % (state["max_seq"], len(state["alerted"])))
     return 0
 
 
