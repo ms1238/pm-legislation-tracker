@@ -362,6 +362,7 @@ def publish_notices(found):
             "ed": f.get("edYd", ""),
             "hits": f.get("hits") or [],
             "laws": f.get("laws") or [],
+            "why": "body" if f.get("hits") else "law",
             "excerpt": f["excerpt"],
             "link": DETAIL_PAGE % no,
             "found": by_no.get(no, {}).get("found", today),
@@ -383,19 +384,36 @@ def slack_send(webhook, text, blocks):
 
 
 def build_blocks(found):
-    head = "*🛴 입법예고 알림 — 관심 키워드 %d건*" % len(found)
-    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": head}}]
-    for f in found:
-        # 본문 키워드로 걸린 것과 법 이름만 보고 올린 것은 신뢰도가 다르다.
-        # 후자는 실질이 첨부(별표)에 있을 수 있어 사람이 열어봐야 한다고 적어 준다.
-        why = ("본문 `%s`" % "`, `".join(f["hits"])) if f.get("hits") \
-              else ("지정 법 `%s` — 본문엔 관심어 없음, 첨부(별표) 확인 필요"
-                    % "`, `".join(f.get("laws") or []))
+    """본문에 관심어가 나온 건과, 법 이름만 보고 올린 건을 갈라 놓는다.
+
+    섞어 놓으면 노이즈가 본문 적중을 묻는다. 실제로 87924(개인형 이동장치 관련)는
+    '안전모'라는 본문 표현으로 잡혔고, 같은 실행에서 법 이름만으로 올라온 두 건은
+    PM과 무관했다. 그래도 버리지는 않는다 — 별표에만 실린 건을 놓치는 통로다.
+    """
+    primary = [f for f in found if f.get("hits")]
+    secondary = [f for f in found if not f.get("hits")]
+
+    blocks = []
+    if primary:
+        blocks.append({"type": "section", "text": {"type": "mrkdwn",
+                       "text": "*🛴 입법예고 알림 — 본문 적중 %d건*" % len(primary)}})
+    for f in primary:
+        why = "본문 `%s`" % "`, `".join(f["hits"])
         txt = ("*<%s|%s>*\n%s · %s · 공고 %s\n예고기간 %s ~ %s\n걸린 이유: %s\n> %s"
                % (DETAIL_PAGE % f["ogLmPpSeq"], tidy_name(f.get("lsNm")) or "(제명 없음)",
                   f.get("asndOfiNm", ""), f.get("lsClsNm", ""), f.get("pntcNo", ""),
                   f.get("stYd", ""), f.get("edYd", ""), why, f.get("excerpt", "")))
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": txt}})
+
+    if secondary:
+        lines = ["*참고 — 관심 법 개정이지만 본문엔 관심어가 없음 (%d건)*" % len(secondary),
+                 "_실질이 별표·첨부에 있을 수 있어 남겨 둡니다._"]
+        for f in secondary:
+            lines.append("· <%s|%s> — %s, ~%s"
+                         % (DETAIL_PAGE % f["ogLmPpSeq"], tidy_name(f.get("lsNm")),
+                            f.get("asndOfiNm", ""), f.get("edYd", "")))
+        blocks.append({"type": "section",
+                       "text": {"type": "mrkdwn", "text": "\n".join(lines)}})
     return "입법예고 알림 %d건" % len(found), blocks
 
 

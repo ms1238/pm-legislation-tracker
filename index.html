@@ -1694,6 +1694,9 @@ function pmSwitchView(view){
       }
       list.innerHTML = rows.map(function(n){
         var done = closed(n.ed);
+        // 본문에 관심어가 나온 건과, 법 이름만 보고 올린 건은 확실성이 다르다.
+        // 뒤엣것은 실질이 별표·첨부에 있을 수 있어 사람이 열어봐야 한다.
+        var byLaw = (n.why === 'law');
         return '' +
           '<div class="bill-card2">' +
             '<div class="bc-top">' +
@@ -1705,8 +1708,9 @@ function pmSwitchView(view){
               (n.lsCls ? ' · ' + esc(n.lsCls) : '') +
               (n.pntcNo ? ' · 공고 ' + esc(n.pntcNo) : '') +
               ' · 예고기간 ' + esc(n.st) + ' ~ ' + esc(n.ed) + '</div>' +
-            '<p class="bc-summary">걸린 표현: ' +
-              (n.hits||[]).map(function(h){ return '<span class="ind">' + esc(h) + '</span>'; }).join(' ') +
+            '<p class="bc-summary">' + (byLaw
+              ? '관심 법(' + (n.laws||[]).map(esc).join(', ') + ') 개정이지만 본문엔 관심어가 없습니다 — 별표·첨부를 확인해야 합니다.'
+              : '걸린 표현: ' + (n.hits||[]).map(function(h){ return '<span class="ind">' + esc(h) + '</span>'; }).join(' ')) +
             '</p>' +
             (n.excerpt ? '<p class="bc-stage-detail">' + esc(n.excerpt) + '</p>' : '') +
             '<a class="bc-link" href="' + esc(n.link) + '" target="_blank" rel="noopener">입법예고 원문 보기 ↗</a>' +
