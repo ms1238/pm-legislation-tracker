@@ -118,7 +118,7 @@ def load_state():
         with open(STATE_PATH, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        return {"seen": [], "alerted": [], "last_run": None}
+        return {"seen": [], "alerted": [], "page_param": None, "last_run": None}
 
 
 def save_state(state):
@@ -146,7 +146,27 @@ def parse_page(html):
     return rows
 
 
-def fetch_list(seen, max_pages=MAX_PAGES):
+def find_page_param(first_nos):
+    """쪽 넘김 파라미터 이름을 실측으로 찾는다.
+
+    목록 폼에는 쪽 번호 필드가 없다(자바스크립트가 넣는다). 이름을 문서에서
+    확인할 방법이 없으므로, 2쪽을 요청해 1쪽과 행이 달라지는 이름을 채택한다.
+    한 번 찾으면 상태 파일에 적어 두고 다음 실행부터는 건너뛴다.
+    """
+    for name in ["pageIndex", "pageNo", "currentPageNo", "cpage", "page", "pageUnit"]:
+        html = fetch("%s?%s=2" % (LIST_URL, name), tries=1)
+        if not html:
+            continue
+        rows = parse_page(html) or []
+        if rows and {r["no"] for r in rows} - first_nos:
+            log("쪽 넘김 파라미터는 '%s' 다" % name)
+            return name
+        time.sleep(DELAY_SEC)
+    log("쪽 넘김 파라미터를 못 찾았다 — 1쪽(최신 20건)만 본다")
+    return None
+
+
+def fetch_list(seen, page_param, max_pages=MAX_PAGES):
     """목록을 최신순으로 훑는다.
 
     한 쪽은 20건인데 열려 있는 예고는 200건이 넘는다. 평소에는 새 글이 1쪽 안에
@@ -155,11 +175,11 @@ def fetch_list(seen, max_pages=MAX_PAGES):
     """
     html = fetch(LIST_URL)
     if not html:
-        return None
+        return None, page_param
     first = parse_page(html)
     if first is None:
         log("목록에서 tbody를 못 찾았다 — 화면 구조가 바뀌었을 수 있다")
-        return None
+        return None, page_param
 
     total = re.search(r"전체\s*([\d,]+)\s*건", strip_tags(html))
     log("목록 1쪽 %d건 (사이트가 밝힌 전체 %s건)"
@@ -168,16 +188,20 @@ def fetch_list(seen, max_pages=MAX_PAGES):
     rows = list(first)
     known = {r["no"] for r in first}
     if all(r["no"] in seen for r in first) and seen:
-        return rows  # 새 글이 없다 — 더 넘길 이유가 없다
+        return rows, page_param  # 새 글이 없다 — 더 넘길 이유가 없다
+
+    if page_param is None:
+        page_param = find_page_param(known)
+    if page_param is None:
+        return rows, None
 
     for page in range(2, max_pages + 1):
-        html = fetch("%s?page=%d" % (LIST_URL, page))
+        html = fetch("%s?%s=%d" % (LIST_URL, page_param, page))
         if not html:
             break
         more = parse_page(html) or []
         fresh_nos = {r["no"] for r in more} - known
         if not fresh_nos:
-            # page 파라미터가 안 먹으면 1쪽이 그대로 다시 온다. 그때도 여기서 멈춘다.
             log("%d쪽에서 새 행이 없어 멈춘다(총 %d건 수집)" % (page, len(rows)))
             break
         rows += [r for r in more if r["no"] in fresh_nos]
@@ -186,7 +210,7 @@ def fetch_list(seen, max_pages=MAX_PAGES):
         if all(r["no"] in seen for r in more) and seen:
             log("%d쪽이 전부 이미 본 글이라 멈춘다(총 %d건 수집)" % (page, len(rows)))
             break
-    return rows
+    return rows, page_param
 
 
 def fetch_body(no):
@@ -261,7 +285,7 @@ def main():
     first_run = not seen
     log("상태 파일: 본 적 있는 예고 %d건%s" % (len(seen), " (첫 실행)" if first_run else ""))
 
-    rows = fetch_list(seen)
+    rows, page_param = fetch_list(seen, state.get("page_param"))
     if rows is None:
         log("목록을 못 읽었다. 상태를 건드리지 않고 종료한다.")
         return 1
@@ -319,6 +343,7 @@ def main():
         log("--dry-run: 상태 파일도 쓰지 않는다.")
         return 0
 
+    state["page_param"] = page_param
     state["seen"] = sorted(seen, key=int, reverse=True)[:2000]
     state["alerted"] = sorted(alerted, key=int, reverse=True)[:500]
     save_state(state)
