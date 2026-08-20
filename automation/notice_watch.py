@@ -58,6 +58,9 @@ KST = timezone(timedelta(hours=9))
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(BASE_DIR, "notice_state.json")
+# 페이지(index.html)의 "정부 입법예고" 탭이 읽어 가는 파일. 상태 파일과 달리
+# 사람이 볼 내용이라 제명·부처·기간·발췌까지 담는다.
+NOTICES_PATH = os.path.join(BASE_DIR, "notices.json")
 
 REST = "https://www.lawmaking.go.kr/rest/ogLmPpMod"
 DETAIL_PAGE = "https://opinion.lawmaking.go.kr/gcom/ogLmPp/%s"
@@ -300,6 +303,41 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=1)
 
 
+def publish_notices(found):
+    """적중한 정부 입법예고를 페이지가 읽을 파일에 쌓는다.
+
+    슬랙은 그때그때 알리고 지나가지만, 페이지는 "지금까지 뭐가 있었나"를 보여줘야
+    한다. 그래서 새로 걸린 건을 기존 목록에 합쳐 두고, 예고일 최신순으로 적는다.
+    """
+    try:
+        with open(NOTICES_PATH, encoding="utf-8") as f:
+            prev = json.load(f).get("notices", [])
+    except Exception:
+        prev = []
+    by_no = {n["no"]: n for n in prev}
+    today = now_kst().strftime("%Y-%m-%d")
+    for f in found:
+        no = f["ogLmPpSeq"]
+        by_no[no] = {
+            "no": no,
+            "name": tidy_name(f.get("lsNm")) or "(제명 없음)",
+            "office": f.get("asndOfiNm", ""),
+            "lsCls": f.get("lsClsNm", ""),
+            "pntcNo": f.get("pntcNo", ""),
+            "st": f.get("stYd", ""),
+            "ed": f.get("edYd", ""),
+            "hits": f["hits"],
+            "excerpt": f["excerpt"],
+            "link": DETAIL_PAGE % no,
+            "found": by_no.get(no, {}).get("found", today),
+        }
+    notices = sorted(by_no.values(), key=lambda n: n.get("st", ""), reverse=True)
+    with open(NOTICES_PATH, "w", encoding="utf-8") as f:
+        json.dump({"updated": now_kst().strftime("%Y-%m-%d %H:%M"), "notices": notices},
+                  f, ensure_ascii=False, indent=1)
+    log("페이지용 목록 갱신: 총 %d건 (%s)" % (len(notices), NOTICES_PATH))
+
+
 def slack_send(webhook, text, blocks):
     payload = {"text": text, "blocks": blocks}
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -348,6 +386,7 @@ def main():
         return 1
 
     state = load_state()
+    first_run = not state.get("seen")
     seen = set(state.get("seen", []))
     alerted = set(state.get("alerted", []))
     log("상태: 본문을 읽어 둔 예고 %d건%s" % (len(seen), " (첫 실행)" if not seen else ""))
@@ -412,6 +451,15 @@ def main():
     if assembly_found:
         blocks += build_assembly_blocks(assembly_found)
 
+    if blocks and first_run and not dry:
+        # 첫 실행은 이미 열려 있던 예고를 통째로 훑는다. 그걸 다 보내면 채널이
+        # 묻히고, 대부분은 이미 지나간 얘기다. 조용히 채워 두고 다음 실행부터 알린다.
+        log("첫 실행이라 슬랙은 보내지 않는다 — 정부 %d건, 국회 %d건을 기록만 한다"
+            % (len(found), len(assembly_found)))
+        alerted.update(f["ogLmPpSeq"] for f in found)
+        assembly_alerted.update((f.get("BILL_ID") or f.get("BILL_NO")) for f in assembly_found)
+        blocks = []
+
     if blocks:
         text = "입법예고 알림 (정부 %d건, 국회 %d건)" % (len(found), len(assembly_found))
         if dry:
@@ -427,6 +475,9 @@ def main():
     if dry:
         log("--dry-run: 상태 파일도 쓰지 않는다.")
         return 0
+
+    if found:
+        publish_notices(found)
 
     state["seen"] = sorted(seen, key=lambda s: -int(s))[:4000]
     state["alerted"] = sorted(alerted, key=lambda s: -int(s))[:500]

@@ -387,6 +387,7 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
 <div class="view-tabs" role="tablist">
   <button class="view-tab active" data-view="members" onclick="pmSwitchView('members')">국회의원·기관 현황</button>
   <button class="view-tab" data-view="bills" onclick="pmSwitchView('bills')">관련 법 현황 <span class="view-tab-count">47</span></button>
+  <button class="view-tab" data-view="notices" onclick="pmSwitchView('notices')">정부 입법예고 <span class="view-tab-count" id="notice-count">·</span></button>
 </div>
 
 <div id="view-members">
@@ -1628,6 +1629,21 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
 
 </div><!-- /view-bills -->
 
+<div id="view-notices" style="display:none;">
+
+<div class="scope-note" style="margin-bottom:20px;">
+  <b>정부 입법예고</b> — 부처가 법률·시행령·시행규칙을 고치겠다고 예고하는 단계입니다.
+  국민참여입법센터 API로 진행중인 예고의 <b>본문(제안이유·주요내용)</b>까지 받아,
+  킥보드·개인형 이동장치·자전거·전기자전거 관련 표현이 나오면 여기에 쌓입니다.
+  제명 검색으로는 안 걸리는 건(예: 「도로교통법 시행규칙 일부개정령안」)을 잡으려고 본문을 봅니다.
+  국회에 발의된 의안은 <b>관련 법 현황</b> 탭에서 따로 봅니다.
+  <span id="notice-updated" style="display:block;margin-top:6px;"></span>
+</div>
+
+<div class="bill-card-list" id="notice-cards"></div>
+
+</div><!-- /view-notices -->
+
 <footer style="border-top:1px solid var(--line);padding-top:20px;margin-top:10px;color:var(--ink-dim);font-size:12px;">
   출처: 열린국회정보 Open API (회의록, 국회의원 인적사항, 의안정보) · 21~22대 국토교통위원회·법제사법위원회·행정안전위원회·국정감사 회의록 원문, 국회의원 통합 정보, 22대 의안정보 기준, 2026-07-30 스냅샷. 국토위 22대 전체 회의(인접의제 검색)는 현재 백그라운드로 처리 중이며 결과 확보 시 갱신됩니다.
 </footer>
@@ -1636,13 +1652,74 @@ details.quotes[open] summary::before{transform:rotate(90deg);}
 
 <script>
 function pmSwitchView(view){
-  document.getElementById('view-members').style.display = (view==='members') ? '' : 'none';
-  document.getElementById('view-bills').style.display = (view==='bills') ? '' : 'none';
+  ['members','bills','notices'].forEach(function(v){
+    var el = document.getElementById('view-' + v);
+    if (el) el.style.display = (v===view) ? '' : 'none';
+  });
   document.querySelectorAll('.view-tab').forEach(function(btn){
     btn.classList.toggle('active', btn.getAttribute('data-view')===view);
   });
   window.scrollTo(0,0);
 }
+
+// 정부 입법예고는 매일 도는 감시(automation/notice_watch.py)가 automation/notices.json
+// 에 쌓는다. 페이지에 값을 박아 두면 갱신할 때마다 이 파일을 고쳐야 하므로 읽어 온다.
+// 파일을 못 읽는 경우(로컬에서 file:// 로 열었을 때 등)에는 탭을 조용히 비워 둔다.
+(function renderNotices(){
+  var list = document.getElementById('notice-cards');
+  if (!list) return;
+
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"]/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+    });
+  }
+  // 예고 종료일이 지났으면 의견제출은 이미 닫혔다. 그 차이를 배지로 보여준다.
+  function closed(ed){
+    var m = String(ed||'').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+    if (!m) return false;
+    return new Date(+m[1], +m[2]-1, +m[3], 23, 59) < new Date();
+  }
+
+  fetch('automation/notices.json', {cache:'no-store'})
+    .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(function(data){
+      var rows = (data && data.notices) || [];
+      document.getElementById('notice-count').textContent = rows.length;
+      var stamp = document.getElementById('notice-updated');
+      if (stamp && data.updated) stamp.textContent = '마지막 확인: ' + data.updated + ' (매일 자동 갱신)';
+      if (!rows.length){
+        list.innerHTML = '<div class="bill-card2"><p class="bc-summary">아직 걸린 입법예고가 없습니다.</p></div>';
+        return;
+      }
+      list.innerHTML = rows.map(function(n){
+        var done = closed(n.ed);
+        return '' +
+          '<div class="bill-card2">' +
+            '<div class="bc-top">' +
+              '<span class="bc-name">' + esc(n.name) + '</span>' +
+              '<span class="st ' + (done ? 'merged' : 'pending') + '">' +
+                (done ? '예고 종료' : '의견접수 중') + '</span>' +
+            '</div>' +
+            '<div class="bc-meta"><b>' + esc(n.office) + '</b>' +
+              (n.lsCls ? ' · ' + esc(n.lsCls) : '') +
+              (n.pntcNo ? ' · 공고 ' + esc(n.pntcNo) : '') +
+              ' · 예고기간 ' + esc(n.st) + ' ~ ' + esc(n.ed) + '</div>' +
+            '<p class="bc-summary">걸린 표현: ' +
+              (n.hits||[]).map(function(h){ return '<span class="ind">' + esc(h) + '</span>'; }).join(' ') +
+            '</p>' +
+            (n.excerpt ? '<p class="bc-stage-detail">' + esc(n.excerpt) + '</p>' : '') +
+            '<a class="bc-link" href="' + esc(n.link) + '" target="_blank" rel="noopener">입법예고 원문 보기 ↗</a>' +
+          '</div>';
+      }).join('');
+    })
+    .catch(function(){
+      document.getElementById('notice-count').textContent = '·';
+      list.innerHTML = '<div class="bill-card2"><p class="bc-summary">' +
+        '입법예고 목록을 불러오지 못했습니다. 공개 페이지(GitHub Pages)에서 확인해 주세요.' +
+        '</p></div>';
+    });
+})();
 
 var PM_BILLS = [
   {no:"DD20688", name:"개인형 이동장치의 안전 및 관리에 관한 법률안(대안)", proposer:"국토교통위원장", date:"2025-12-17", link:"https://likms.assembly.go.kr/bill/billDetail.do?billId=PRC_Z2J5C1I2I1X5C1H7O0E1I1Z2F9U7D4", summary:"12건 병합 최종안(위원회의결안 원문 31p 직접 확인). 대여업 등록제, 최고속도 하향, 나이 요건(시행령 위임)+대여 시 교육이수 확인을 골자로 함 — 운전면허·전용면허 조항은 없음. 도로교통법보다 이 법을 우선 적용(제4조), 대중교통 연계 거치대·주차시설 확충, 대여사업자단체 설립 근거도 포함.", stage:"소관위 심사중", stageDetail:"국토위 교통법안심사소위에서 계속 협의 중(2026-04-29 소위 의결, 전체회의 상정 대기) — 위원회 대안은 API 미색인이라 likms 원문으로 직접 확인함.", stageClass:"pending"},
