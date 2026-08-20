@@ -291,11 +291,15 @@ def fetch_assembly_notices():
     return rows
 
 
-def assembly_summary(bill_id):
-    """의안 제안이유·주요내용. 못 받으면 None(모른다), 없으면 빈 문자열."""
+def assembly_summary(bill_no):
+    """의안 제안이유·주요내용(SUMMARY). 못 받으면 None(모른다), 없으면 빈 문자열.
+
+    조회 키는 BILL_NO 다. BILL_ID 로 부르면 필터가 무시되는 게 아니라 '데이터 없음'이
+    와서, 마치 제안이유가 등록 안 된 것처럼 보인다(실측으로 확인).
+    """
     key = os.environ.get("ASSEMBLY_API_KEY", "").strip()
-    raw = fetch("%s?KEY=%s&Type=json&pIndex=1&pSize=5&BILL_ID=%s"
-                % (ASSEMBLY_SUMMARY, key, urllib.parse.quote(bill_id)))
+    raw = fetch("%s?KEY=%s&Type=json&pIndex=1&pSize=5&BILL_NO=%s"
+                % (ASSEMBLY_SUMMARY, key, urllib.parse.quote(str(bill_no))))
     if raw is None:
         return None
     try:
@@ -308,7 +312,7 @@ def assembly_summary(bill_id):
         rows = data["BPMBILLSUMMARY"][1]["row"]
     except Exception:
         return None
-    return clean(" ".join(str(v) for r in rows for v in r.values() if v))
+    return clean(" ".join(str(r.get("SUMMARY") or "") for r in rows))
 
 
 def assembly_hits(name):
@@ -505,7 +509,7 @@ def main():
                 continue
             if not hits:
                 # 법 이름만 걸렸다 — 제안이유를 읽어 PM 얘기인지 확인한다.
-                summary = assembly_summary(r.get("BILL_ID") or "")
+                summary = assembly_summary(r.get("BILL_NO") or "")
                 time.sleep(DELAY_SEC)
                 if summary is None:
                     r["note"] = "제안이유를 못 읽어 법 이름만으로 올림"
