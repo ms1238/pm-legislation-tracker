@@ -45,7 +45,7 @@ jobs:
           echo "::add-mask::$OC"
           echo "oc=$OC" >> "$GITHUB_OUTPUT"
 
-      - name: 입법예고 API 진단
+      - name: 입법예고 감시 시험 실행(슬랙·상태파일 없이)
         env:
           LAWMAKING_OC: ${{ steps.oc.outputs.oc }}
-        run: python automation/lawmaking_probe.py
+        run: python automation/notice_watch.py --dry-run
