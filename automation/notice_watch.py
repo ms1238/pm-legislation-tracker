@@ -21,10 +21,17 @@
                      stYd, edYd, telNo, faxNo, email, modDt, status, readCnt, lmPpCts
           잘못된 OC 는 <result><retMsg>401</retMsg></result> 를 준다.
 
+무엇을 보는가:
+  1) 최신 1쪽(20건). 어느 법에서 튀어나오든 새 예고를 잡는다. PM 규제가 늘 예상한
+     법에서만 오지는 않는다 — 배터리 안전(전기용품법), 공유 모빌리티(여객자동차법)
+     처럼 목록에 없는 법에서 오는 경우가 실제로 있다.
+  2) WATCH_LAWS 의 제명 검색. 그 법의 시행령·시행규칙이면 제명에 법 이름이 그대로
+     들어가므로 확실히 걸리고, 1쪽 밖으로 밀려난 예고까지 잡는 안전망이 된다.
+
 왜 이렇게 적게 부르는가:
-  한 번 호출에 제명·부처·기간·본문이 다 온다. 그래서 목록은 "무엇이 새로 올라왔나"만
-  알면 되고, 그건 최신순 1쪽(20건)이면 충분하다 — 부처 입법예고는 하루 10건 안팎이고
-  이 감시는 하루 두 번 돈다. 평소 한 번 실행에 드는 호출은 [목록 1 + 새 글 수]다.
+  상세 한 번 호출에 제명·부처·기간·본문이 다 온다. 그래서 목록 쪽은 "무슨 번호가
+  있나"만 알면 되고, 본문은 아직 안 읽은 번호에 대해서만 부른다.
+  평소 한 번 실행: 목록 1 + 지정 법 검색 9 + 새 글 수(하루 10건 안팎) ≒ 20회 미만.
 
   1쪽이 통째로 새 글이면 그때만 놓친 구간을 의심한다. 그 경우 HTML 쪽 넘김 대신
   번호로 직접 메운다(ogLmPpSeq는 순번이다). 화면 구조에 덜 기대고, 요청도 적다.
@@ -58,9 +65,23 @@ DELAY_SEC = 0.4
 # 조용히 반쯤 훑는 대신 밀렸다고 알리는 편이 낫다.
 MAX_GAP_FILL = 120
 
-# 첫 실행에는 과거 번호를 알 수 없다. 이미 열려 있는 관심 예고를 놓치지 않도록
-# 제명 검색으로 한 번만 훑는다. 제명에 걸리는 말만 넣는다(본문 검색은 안 된다).
-FIRST_RUN_SEARCHES = ["도로교통", "자전거", "이륜", "주차장"]
+# PM 규제가 실제로 실리는 법들. 이 법의 시행령·시행규칙 개정이면 제명에 법 이름이
+# 그대로 들어가므로, 제명 검색(lsNm)으로 확실히 잡힌다. 최신 1쪽 밖으로 밀려난
+# 예고도 여기서 걸리므로 안전망 역할을 한다.
+#
+# 검색은 제명에 대한 부분일치라 짧고 튀는 조각으로 넣는다. '도로'처럼 너무 흔한
+# 조각은 관계없는 예고를 잔뜩 끌고 오므로 피한다.
+WATCH_LAWS = [
+    "도로교통",      # 도로교통법 — 개인형 이동장치 정의·통행방법이 여기 있다
+    "도로법",
+    "자전거",        # 자전거 이용 활성화에 관한 법률
+    "주차장",
+    "교통약자",
+    "장애인",        # 장애인·노인·임산부 등의 편의증진 보장에 관한 법률
+    "자동차관리",
+    "위치정보",
+    "개인정보",
+]
 
 # 이 트래커가 찾는 말. '자전거'는 '자전거도로'·'전기자전거'까지 함께 걸리라고
 # 통째로 둔다 — 이 분야에서 넓게 거는 쪽이 놓치는 쪽보다 낫다.
@@ -132,7 +153,7 @@ def load_state():
         with open(STATE_PATH, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        return {"max_seq": 0, "alerted": [], "last_run": None}
+        return {"max_seq": 0, "seen": [], "alerted": [], "last_run": None}
 
 
 def save_state(state):
@@ -190,42 +211,49 @@ def excerpt(text, keyword, width=120):
     return ("…" if s else "") + text[s:s + width] + "…"
 
 
-def targets(state):
+def targets(state, seen):
     """이번에 본문을 읽어야 할 번호를 정한다.
 
-    평소: 1쪽에서 아직 안 본 번호만. 1쪽이 통째로 새 글이면 그 아래로 밀린
-    구간이 있다는 뜻이라, 화면을 더 넘기는 대신 번호를 직접 이어 붙인다.
+    두 갈래를 합친다.
+      1) 최신 1쪽 — 어느 법에서 튀어나오든 새 예고를 잡는다(요청 1회).
+      2) 지정 법 제명 검색 — PM 규제가 실리는 법은 이름이 제명에 그대로 들어간다.
+         1쪽 밖으로 밀려난 예고도 여기서 걸린다(요청 9회).
+    둘 다 '아직 본문을 안 읽은 번호'만 남기므로, 평소 본문 조회는 새 글 수만큼이다.
     """
     nums = list_numbers()
     if nums is None:
         return None
     log("목록 1쪽 %d건 (최신 %s)" % (len(nums), max(nums) if nums else "-"))
 
+    picked = set(nums)
+    for kw in WATCH_LAWS:
+        found = list_numbers("?lsNm=%s" % urllib.parse.quote(kw))
+        if found is None:
+            continue
+        new_here = set(found) - picked
+        if found:
+            log("지정 법 '%s' → %d건%s"
+                % (kw, len(found), " (그중 %d건은 1쪽 밖)" % len(new_here) if new_here else ""))
+        picked |= set(found)
+        time.sleep(DELAY_SEC)
+
     max_seq = int(state.get("max_seq") or 0)
-    if not max_seq:
-        # 첫 실행. 과거 번호를 모르니 1쪽 + 제명 검색으로 지금 열린 것만 훑는다.
-        picked = list(nums)
-        for kw in FIRST_RUN_SEARCHES:
-            found = list_numbers("?lsNm=%s&finishIncludeYn=Y" % urllib.parse.quote(kw))
-            if found:
-                log("첫 실행 제명 검색 '%s' → %d건" % (kw, len(found)))
-                picked += found
-            time.sleep(DELAY_SEC)
-        return sorted(set(picked), reverse=True)
+    todo = {n for n in picked if str(n) not in seen}
 
-    fresh = [n for n in nums if n > max_seq]
-    if len(fresh) < len(nums):
-        return sorted(fresh, reverse=True)
+    # 1쪽이 통째로 새 글이면 그 아래가 잘렸다는 뜻이다. 화면을 더 넘기는 대신
+    # 번호로 직접 메운다(ogLmPpSeq는 순번이다).
+    if max_seq and nums and all(n > max_seq for n in nums):
+        gap = [n for n in range(max_seq + 1, max(nums)) if n not in picked]
+        if len(gap) > MAX_GAP_FILL:
+            log("밀린 구간이 %d개로 상한(%d)을 넘는다 — 최근 것부터 채운다"
+                % (len(gap), MAX_GAP_FILL))
+            gap = gap[-MAX_GAP_FILL:]
+        if gap:
+            log("1쪽이 전부 새 글이라 번호 %d~%d 구간 %d개를 함께 확인한다"
+                % (max_seq + 1, max(nums), len(gap)))
+        todo |= set(gap)
 
-    # 1쪽이 전부 새 글 — 그 아래가 잘렸다. 번호로 메운다.
-    gap = [n for n in range(max_seq + 1, max(nums)) if n not in set(nums)]
-    if len(gap) > MAX_GAP_FILL:
-        log("밀린 구간이 %d개로 상한(%d)을 넘는다 — 최근 것부터 채운다"
-            % (len(gap), MAX_GAP_FILL))
-        gap = gap[-MAX_GAP_FILL:]
-    log("1쪽이 전부 새 글이라 번호 %d~%d 구간 %d개를 함께 확인한다"
-        % (max_seq + 1, max(nums), len(gap)))
-    return sorted(set(fresh) | set(gap), reverse=True)
+    return sorted(todo, reverse=True)
 
 
 def slack_send(webhook, text, blocks):
@@ -262,10 +290,12 @@ def main():
 
     state = load_state()
     alerted = set(state.get("alerted", []))
+    seen = set(state.get("seen", []))
     max_seq = int(state.get("max_seq") or 0)
-    log("상태: 마지막으로 본 번호 %s" % (max_seq or "(첫 실행)"))
+    log("상태: 마지막으로 본 번호 %s, 본문을 읽어 둔 예고 %d건"
+        % (max_seq or "(첫 실행)", len(seen)))
 
-    todo = targets(state)
+    todo = targets(state, seen)
     if todo is None:
         log("목록을 못 읽었다. 상태를 건드리지 않고 종료한다.")
         return 1
@@ -281,6 +311,7 @@ def main():
         if notice is None:
             continue          # 못 읽었다 — max_seq를 올리지 않아 다음에 다시 본다
         read_ok.append(seq)
+        seen.add(str(seq))
         if not notice:
             continue          # 빈 번호
         hits = hits_in(notice["lsNm"] + " " + notice["cts"])
@@ -315,9 +346,11 @@ def main():
     # 끝까지 읽은 번호까지만 진도로 인정한다. 못 읽은 건 다음 실행이 다시 본다.
     if read_ok:
         state["max_seq"] = max(max_seq, max(read_ok))
+    state["seen"] = sorted(seen, key=int, reverse=True)[:3000]
     state["alerted"] = sorted(alerted, key=int, reverse=True)[:500]
     save_state(state)
-    log("상태 갱신 완료 (max_seq %s, alerted %d건)" % (state["max_seq"], len(state["alerted"])))
+    log("상태 갱신 완료 (max_seq %s, seen %d건, alerted %d건)"
+        % (state["max_seq"], len(state["seen"]), len(state["alerted"])))
     return 0
 
 
