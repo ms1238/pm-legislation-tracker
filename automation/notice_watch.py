@@ -382,11 +382,15 @@ def build_blocks(found):
     head = "*🛴 입법예고 알림 — 관심 키워드 %d건*" % len(found)
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": head}}]
     for f in found:
-        txt = ("*<%s|%s>*\n%s · %s · 공고 %s\n예고기간 %s ~ %s\n적중: `%s`\n> %s"
-               % (DETAIL_PAGE % f["ogLmPpSeq"], f.get("lsNm") or "(제명 없음)",
+        # 본문 키워드로 걸린 것과 법 이름만 보고 올린 것은 신뢰도가 다르다.
+        # 후자는 실질이 첨부(별표)에 있을 수 있어 사람이 열어봐야 한다고 적어 준다.
+        why = ("본문 `%s`" % "`, `".join(f["hits"])) if f.get("hits") \
+              else ("지정 법 `%s` — 본문엔 관심어 없음, 첨부(별표) 확인 필요"
+                    % "`, `".join(f.get("laws") or []))
+        txt = ("*<%s|%s>*\n%s · %s · 공고 %s\n예고기간 %s ~ %s\n걸린 이유: %s\n> %s"
+               % (DETAIL_PAGE % f["ogLmPpSeq"], tidy_name(f.get("lsNm")) or "(제명 없음)",
                   f.get("asndOfiNm", ""), f.get("lsClsNm", ""), f.get("pntcNo", ""),
-                  f.get("stYd", ""), f.get("edYd", ""),
-                  "`, `".join(f["hits"]), f["excerpt"]))
+                  f.get("stYd", ""), f.get("edYd", ""), why, f.get("excerpt", "")))
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": txt}})
     return "입법예고 알림 %d건" % len(found), blocks
 
