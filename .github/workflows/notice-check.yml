@@ -1,0 +1,65 @@
+# 입법예고 감시 — 킥보드·개인형 이동장치·자전거·전기자전거 관련 예고가 뜨면 슬랙으로 알린다.
+#
+# 첫 실행은 진행중인 예고 전부의 본문을 읽는다(200건대, 몇 분 걸린다).
+# 그 뒤로는 새로 올라온 건만 읽으므로 1분 안에 끝난다.
+#
+# 필요한 저장소 시크릿:
+#   LAWMAKING_OC       국민참여입법센터 정보공개 승인 아이디
+#   SLACK_WEBHOOK_URL  알림 보낼 채널 (일일 체크와 같은 값을 쓴다)
+name: 입법예고 감시
+
+on:
+  schedule:
+    # 한국시간 09:30, 16:30 (KST=UTC+9 이므로 UTC 00:30, 07:30).
+    # 부처 공고는 업무시간에 올라오므로 오전·오후 한 번씩이면 당일 안에 잡힌다.
+    # GitHub 예약 실행은 정시를 보장하지 않는다 — 밀려도 다음 실행이 이어서 본다.
+    - cron: "30 0,7 * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "이번 실행에서 본문을 읽을 최대 건수(비우면 제한 없음)"
+        required: false
+        type: string
+      dry_run:
+        description: "슬랙 전송과 상태 저장 없이 판정만 본다"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write      # 상태 파일 커밋·푸시에 필요
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 입법예고 감시
+        env:
+          LAWMAKING_OC: ${{ secrets.LAWMAKING_OC }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          python automation/notice_watch.py $ARGS
+
+      - name: 상태 파일 커밋·푸시
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add automation/notice_state.json
+          if git diff --cached --quiet; then
+            echo "상태 변화 없음 - 커밋 생략"
+          else
+            git commit -m "입법예고 감시: 상태 갱신"
+            git push
+            echo "상태 파일 갱신 완료"
+          fi
