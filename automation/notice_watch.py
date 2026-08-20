@@ -79,6 +79,24 @@ KEYWORDS = [
     "개인형 이동장치", "개인형이동장치", "개인형 이동수단", "개인형이동수단",
     "전동킥보드", "킥보드", "전동이륜평행차", "전동기의 동력만으로",
     "자전거", "전기자전거", "퍼스널 모빌리티", "퍼스널모빌리티",
+    # 법령문에서 헬멧은 '안전모'·'인명보호 장구'로 쓴다. 87924(도로교통법 시행규칙,
+    # 안전모 미착용 벌점)가 '헬멧'으로는 한 글자도 안 걸렸다.
+    "안전모", "인명보호", "승차용 안전모",
+]
+
+# 본문에 관심어가 없어도 이 법의 개정이면 사람이 봐야 한다.
+# 87924가 그 예다 — 본문은 "기초질서 벌점 정비"라고만 하고, PM에 어떻게 걸리는지는
+# 별표 28(첨부 hwpx)에 있다. 첨부는 API로 안 오므로 본문만 믿으면 놓친다.
+WATCH_LAWS = [
+    "도로교통법",
+    "도로법",
+    "자전거",          # 자전거 이용 활성화에 관한 법률
+    "주차장법",
+    "교통약자",
+    "편의증진",
+    "자동차관리법",
+    "위치정보",
+    "개인정보 보호법",
 ]
 
 # --- 국회 입법예고 ---------------------------------------------------------
@@ -88,18 +106,10 @@ KEYWORDS = [
 # PM 규제가 실리는 법 이름을 알고 있어야 한다. 아래 목록이 그 역할이다.
 ASSEMBLY_ENDPOINT = "https://open.assembly.go.kr/portal/openapi/nknalejkafmvgzmpt"
 ASSEMBLY_PAGE_SIZE = 100
-
-WATCH_LAWS = [
-    "도로교통법",
-    "도로법",
-    "자전거",          # 자전거 이용 활성화에 관한 법률
-    "주차장법",
-    "교통약자",        # 교통약자의 이동편의 증진에 관한 법률
-    "편의증진",        # 장애인·노인·임산부 등의 편의증진 보장에 관한 법률
-    "자동차관리법",
-    "위치정보",        # 위치정보의 보호 및 이용 등에 관한 법률
-    "개인정보 보호법",
-]
+# 의안 제안이유·주요내용. 예고 목록에는 본문이 없어서 의안명만 보면 "도로교통법
+# 일부개정법률안" 20건이 전부 걸린다(음주운전·신호위반 등 PM과 무관한 것 포함).
+# 법 이름으로 좁힌 뒤 여기서 본문을 받아 확인하면 정부 쪽과 같은 정밀도가 된다.
+ASSEMBLY_SUMMARY = "https://open.assembly.go.kr/portal/openapi/BPMBILLSUMMARY"
 
 # 호출 성패 집계. "볼 게 없었다"와 "못 봤다"를 구분해야 조용한 실패를 안 만든다.
 API_ATTEMPTS = 0
@@ -281,6 +291,26 @@ def fetch_assembly_notices():
     return rows
 
 
+def assembly_summary(bill_id):
+    """의안 제안이유·주요내용. 못 받으면 None(모른다), 없으면 빈 문자열."""
+    key = os.environ.get("ASSEMBLY_API_KEY", "").strip()
+    raw = fetch("%s?KEY=%s&Type=json&pIndex=1&pSize=5&BILL_ID=%s"
+                % (ASSEMBLY_SUMMARY, key, urllib.parse.quote(bill_id)))
+    if raw is None:
+        return None
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return None
+    if "RESULT" in data:          # INFO-200 = 그 의안 요약이 없다
+        return ""
+    try:
+        rows = data["BPMBILLSUMMARY"][1]["row"]
+    except Exception:
+        return None
+    return clean(" ".join(str(v) for r in rows for v in r.values() if v))
+
+
 def assembly_hits(name):
     """의안명에서 걸리는 것: 관심 키워드가 직접 나오거나, 지정 법의 개정이거나."""
     name = name or ""
@@ -326,7 +356,8 @@ def publish_notices(found):
             "pntcNo": f.get("pntcNo", ""),
             "st": f.get("stYd", ""),
             "ed": f.get("edYd", ""),
-            "hits": f["hits"],
+            "hits": f.get("hits") or [],
+            "laws": f.get("laws") or [],
             "excerpt": f["excerpt"],
             "link": DETAIL_PAGE % no,
             "found": by_no.get(no, {}).get("found", today),
@@ -364,11 +395,14 @@ def build_assembly_blocks(found):
     head = "*🏛 국회 입법예고 — 관심 의안 %d건*" % len(found)
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": head}}]
     for f in found:
-        why = ("키워드 `%s`" % "`, `".join(f["hits"])) if f["hits"] else ("지정 법 `%s`" % "`, `".join(f["laws"]))
-        txt = ("*<%s|%s>*\n%s · %s\n예고 종료 %s · 의안번호 %s\n걸린 이유: %s"
+        why = ("`%s`" % "`, `".join(f["hits"])) if f["hits"] else ("지정 법 `%s`" % "`, `".join(f["laws"]))
+        if f.get("note"):
+            why += " — " + f["note"]
+        txt = ("*<%s|%s>*\n%s · %s\n예고 종료 %s · 의안번호 %s\n걸린 이유: %s%s"
                % (f.get("LINK_URL", ""), f.get("BILL_NAME", ""),
                   f.get("PROPOSER", ""), f.get("CURR_COMMITTEE", ""),
-                  f.get("NOTI_ED_DT", ""), f.get("BILL_NO", ""), why))
+                  f.get("NOTI_ED_DT", ""), f.get("BILL_NO", ""), why,
+                  ("\n> " + f["excerpt"]) if f.get("excerpt") else ""))
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": txt}})
     return blocks
 
@@ -379,30 +413,8 @@ def inspect(seq):
     "안 걸렸다"가 '본문에 그 말이 없다'인지 '본문이 안 왔다'인지 구분해야 키워드를
     손볼지 수집을 손볼지 정할 수 있다.
     """
-    xml = fetch("%s.xml?OC=%s&diff=0&pageSize=%d&pageIndex=1"
-                % (REST, urllib.parse.quote(oc()), PAGE_SIZE))
-    row = None
-    for page in range(1, MAX_PAGES + 1):
-        if page > 1:
-            xml = fetch("%s.xml?OC=%s&diff=0&pageSize=%d&pageIndex=%d"
-                        % (REST, urllib.parse.quote(oc()), PAGE_SIZE, page))
-        if not xml:
-            break
-        got = records(xml)
-        if not got:
-            break
-        for r in got:
-            if r.get("ogLmPpSeq") == str(seq):
-                row = r
-                break
-        if row:
-            break
-    if not row:
-        log("%s 는 진행중 목록에 없다" % seq)
-        row = {"ogLmPpSeq": str(seq)}
-    else:
-        log("목록 항목: %s" % {k: v for k, v in row.items() if k != "FileDownLink"})
-
+    # 상세는 번호만 있으면 불린다(mappingLbicId는 검증하지 않는다). 목록을 훑을 일이 없다.
+    row = {"ogLmPpSeq": str(seq)}
     cts = fetch_body(row)
     if cts is None:
         log("본문 조회 실패")
@@ -459,13 +471,17 @@ def main():
         if cts is None:
             continue          # 못 읽었다 — seen 에 넣지 않아 다음 실행이 다시 본다
         seen.add(seq)
-        hits = hits_in((row.get("lsNm") or "") + " " + cts)
-        if not hits or seq in alerted:
+        name = row.get("lsNm") or ""
+        hits = hits_in(name + " " + cts)
+        laws = [w for w in WATCH_LAWS if w in name]
+        if (not hits and not laws) or seq in alerted:
             continue
         row["hits"] = hits
-        row["excerpt"] = excerpt(cts, hits[0])
+        row["laws"] = laws
+        row["excerpt"] = excerpt(cts, hits[0]) if hits else (cts[:180] + "…" if cts else "")
         found.append(row)
-        log("적중 %s | %s | %s" % (seq, row.get("lsNm"), ", ".join(hits)))
+        log("적중 %s | %s | %s"
+            % (seq, name, ", ".join(hits) if hits else "지정 법 " + ", ".join(laws)))
 
     # --- 국회 입법예고 ---
     assembly_alerted = set(state.get("assembly_alerted", []))
@@ -475,6 +491,7 @@ def main():
         log("국회 입법예고를 못 읽었다 — 이번엔 정부 쪽만 본다")
     else:
         log("국회 입법예고 %d건" % len(arows))
+        skipped = 0
         for r in arows:
             bid = r.get("BILL_ID") or r.get("BILL_NO") or ""
             if not bid or bid in assembly_alerted:
@@ -482,10 +499,27 @@ def main():
             hits, laws = assembly_hits(r.get("BILL_NAME"))
             if not hits and not laws:
                 continue
+            if not hits:
+                # 법 이름만 걸렸다 — 제안이유를 읽어 PM 얘기인지 확인한다.
+                summary = assembly_summary(r.get("BILL_ID") or "")
+                time.sleep(DELAY_SEC)
+                if summary is None:
+                    r["note"] = "제안이유를 못 읽어 법 이름만으로 올림"
+                elif summary:
+                    found_in = hits_in(summary)
+                    if not found_in:
+                        skipped += 1
+                        continue
+                    hits = found_in
+                    r["excerpt"] = excerpt(summary, found_in[0])
+                else:
+                    r["note"] = "제안이유가 등록되지 않아 법 이름만으로 올림"
             r["hits"], r["laws"] = hits, laws
             assembly_found.append(r)
             log("국회 적중 %s | %s | %s"
                 % (r.get("BILL_NO"), r.get("BILL_NAME"), ", ".join(hits or laws)))
+        if skipped:
+            log("국회 %d건은 법 이름만 걸리고 제안이유에 관심어가 없어 걸렀다" % skipped)
 
     ratio, health = api_health()
     log("조회 상태: %s" % health)
