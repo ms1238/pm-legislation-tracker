@@ -249,9 +249,10 @@ def targets(state, seen, titles):
         if found is None:
             continue
         new_here = set(found) - picked
-        if found:
-            log("지정 법 '%s' → %d건%s"
-                % (kw, len(found), " (그중 %d건은 1쪽 밖)" % len(new_here) if new_here else ""))
+        # 0건도 찍는다. 조용하면 '그 법에 예고가 없다'와 '검색이 안 먹는다'를
+        # 구분할 수 없고, 안전망이 죽은 걸 눈치채지 못한다.
+        log("지정 법 '%s' → %d건%s"
+            % (kw, len(found), " (그중 %d건은 1쪽 밖)" % len(new_here) if new_here else ""))
         picked |= set(found)
         time.sleep(DELAY_SEC)
 

@@ -110,10 +110,37 @@ def step3_try_search_urls():
         time.sleep(0.4)
 
 
+def step4_search_table():
+    """제명 검색 결과 페이지의 표 구조를 본다.
+
+    감시 쪽에서 lsNm 검색이 전부 0행으로 나왔다. 전체 건수는 1건이라고 하면서
+    행이 안 잡히니, 결과 표가 평소 목록과 다른 자리에 있는 것으로 보인다.
+    """
+    print("\n" + "=" * 70)
+    print("STEP 4. 제명 검색 결과 페이지의 표 구조")
+    print("=" * 70)
+    html = fetch("%s?lsNm=%s" % (LIST_URL, urllib.parse.quote("자전거")))
+    if not html:
+        return
+    print("    전체 %s건" % count_of(html))
+    tbodies = re.findall(r"<tbody[^>]*>.*?</tbody>", html, re.S | re.I)
+    print("    tbody %d개" % len(tbodies))
+    for i, tb in enumerate(tbodies):
+        links = re.findall(r'href="(/gcom/ogLmPp/\d+)"', tb)
+        print("      [%d] %d자, ogLmPp 링크 %d개" % (i, len(tb), len(links)))
+        if not links:
+            print("          앞부분: %s" % strip_tags(tb)[:200])
+    all_links = re.findall(r'href="/gcom/ogLmPp/(\d+)"[^>]*title="([^"]*)"', html)
+    print("    페이지 전체에서 찾은 상세 링크 %d개: %s" % (len(all_links), all_links[:5]))
+    loose = re.findall(r'href="/gcom/ogLmPp/(\d+)"', html)
+    print("    title 속성 없이 링크만: %d개 %s" % (len(loose), loose[:8]))
+
+
 def main():
     step1_is_title_only()
     step2_find_search()
     step3_try_search_urls()
+    step4_search_table()
     print("\n진단 끝.")
     return 0
 
