@@ -3,11 +3,12 @@
 # 첫 실행은 진행중인 예고 전부의 본문을 읽는다(200건대, 몇 분 걸린다).
 # 그 뒤로는 새로 올라온 건만 읽으므로 1분 안에 끝난다.
 #
-# 여기서 보는 것은 정부 입법예고(부처가 내는 법률안·시행령·시행규칙)뿐이다.
-# 국회에 올라온 의안은 같은 저장소의 cloud_check_updates.py 가 국회 Open API 로 따로 본다.
+# 정부 입법예고(부처)와 국회 입법예고를 함께 본다. 국회에 접수된 의안의 심사 진행은
+# 같은 저장소의 cloud_check_updates.py 가 따로 본다 — 여기는 예고 단계만이다.
 #
 # 필요한 저장소 시크릿:
 #   LAWMAKING_OC       국민참여입법센터 정보공개 승인 아이디
+#   ASSEMBLY_API_KEY   국회 Open API 키 (일일 체크와 같은 값을 쓴다)
 #   SLACK_WEBHOOK_URL  알림 보낼 채널 (일일 체크와 같은 값을 쓴다)
 name: 입법예고 감시
 
@@ -47,6 +48,7 @@ jobs:
       - name: 입법예고 감시
         env:
           LAWMAKING_OC: ${{ secrets.LAWMAKING_OC }}
+          ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           ARGS=""

@@ -5,7 +5,11 @@
 입법예고를 본다. 법안이 발의되기 전에, 부처가 시행령·시행규칙을 고치겠다고
 예고하는 단계라서 먼저 알수록 의견제출 기간이 남는다.
 
-쓰는 API 두 개 (국민참여입법센터, OC 인증):
+두 갈래를 본다.
+  정부 입법예고 — 국민참여입법센터. 본문(lmPpCts)이 오므로 본문 키워드로 판정한다.
+  국회 입법예고 — 국회 Open API. 본문이 안 오므로 의안명과 지정 법 이름으로 판정한다.
+
+쓰는 API (국민참여입법센터, OC 인증):
 
   목록  https://www.lawmaking.go.kr/rest/ogLmPpMod.xml?OC=..&diff=0
         요청변수: lsClsCd(법령종류) cptOfiOrgCd(소관부처) diff(0 진행/1 종료)
@@ -30,8 +34,15 @@
   평소 한 번 실행 = 1 + (새로 올라온 건수). 첫 실행만 열려 있는 전부를 읽는다
   (--limit 으로 나눠 읽을 수 있다).
 
+국회 입법예고 API (국회 Open API, 키 인증):
+  목록  https://open.assembly.go.kr/portal/openapi/nknalejkafmvgzmpt
+        응답변수: BILL_ID BILL_NO BILL_NAME AGE PROPOSER_KIND_CD CURR_COMMITTEE
+                  NOTI_ED_DT LINK_URL PROPOSER CURR_COMMITTEE_ID
+        제안이유·주요내용은 없다. BILL_NAME 필터는 부분일치가 안 된다(실측).
+
 비밀값은 파일이 아니라 환경변수로 받는다(이 저장소는 퍼블릭이다):
       LAWMAKING_OC        국민참여입법센터 승인 아이디
+      ASSEMBLY_API_KEY    국회 Open API 키 (없으면 국회 쪽은 건너뛴다)
       SLACK_WEBHOOK_URL   알림 보낼 채널
 상태 파일(notice_state.json)은 이 폴더에 있고, 커밋·푸시는 호출하는 워크플로 몫이다.
 
@@ -55,12 +66,36 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; pm-legislation-tracker/1.0)"}
 TIMEOUT = 25
 DELAY_SEC = 0.4
 
+# 목록은 기본 20건만 준다. pageSize·pageIndex는 문서에 없지만 실제로 먹는다.
+PAGE_SIZE = 100
+MAX_PAGES = 10
+
 # 이 트래커가 찾는 말. '자전거'는 '자전거도로'·'전기자전거'까지 함께 걸리라고
 # 통째로 둔다 — 이 분야에서 넓게 거는 쪽이 놓치는 쪽보다 낫다.
 KEYWORDS = [
     "개인형 이동장치", "개인형이동장치", "개인형 이동수단", "개인형이동수단",
     "전동킥보드", "킥보드", "전동이륜평행차", "전동기의 동력만으로",
     "자전거", "전기자전거", "퍼스널 모빌리티", "퍼스널모빌리티",
+]
+
+# --- 국회 입법예고 ---------------------------------------------------------
+# 국회에 접수된 의안도 예고 기간을 둔다. 다만 이 API는 의안명·소관위·예고종료일만
+# 주고 제안이유·주요내용은 주지 않는다(응답 필드 10개, 200자 넘는 필드 없음).
+# 그래서 정부 쪽처럼 본문 키워드로 못 거른다 — 의안명으로 걸러야 하고, 그러려면
+# PM 규제가 실리는 법 이름을 알고 있어야 한다. 아래 목록이 그 역할이다.
+ASSEMBLY_ENDPOINT = "https://open.assembly.go.kr/portal/openapi/nknalejkafmvgzmpt"
+ASSEMBLY_PAGE_SIZE = 100
+
+WATCH_LAWS = [
+    "도로교통법",
+    "도로법",
+    "자전거",          # 자전거 이용 활성화에 관한 법률
+    "주차장법",
+    "교통약자",        # 교통약자의 이동편의 증진에 관한 법률
+    "편의증진",        # 장애인·노인·임산부 등의 편의증진 보장에 관한 법률
+    "자동차관리법",
+    "위치정보",        # 위치정보의 보호 및 이용 등에 관한 법률
+    "개인정보 보호법",
 ]
 
 # 호출 성패 집계. "볼 게 없었다"와 "못 봤다"를 구분해야 조용한 실패를 안 만든다.
@@ -152,16 +187,31 @@ def records(xml):
 
 
 def fetch_open_notices():
-    """진행중(diff=0)인 입법예고 전부. 한 번 호출로 번호와 메타가 다 온다."""
-    xml = fetch("%s.xml?OC=%s&diff=0" % (REST, urllib.parse.quote(oc())))
-    if xml is None:
-        return None
-    if "<retMsg>401</retMsg>" in xml:
-        log("OC 인증 실패(401) — LAWMAKING_OC 를 확인해야 한다")
-        return None
-    rows = [r for r in records(xml) if r.get("ogLmPpSeq")]
+    """진행중(diff=0)인 입법예고 전부.
+
+    기본 응답은 20건이다. 문서의 요청변수에는 페이징이 없지만 pageSize·pageIndex가
+    실제로 먹는다(실측). 한 쪽 100건씩 받아, 덜 온 쪽이 나오면 거기서 멈춘다.
+    """
+    rows, seen_ids = [], set()
+    for page in range(1, MAX_PAGES + 1):
+        xml = fetch("%s.xml?OC=%s&diff=0&pageSize=%d&pageIndex=%d"
+                    % (REST, urllib.parse.quote(oc()), PAGE_SIZE, page))
+        if xml is None:
+            return None if page == 1 else rows
+        if "<retMsg>401</retMsg>" in xml:
+            log("OC 인증 실패(401) — LAWMAKING_OC 를 확인해야 한다")
+            return None
+        got = [r for r in records(xml) if r.get("ogLmPpSeq")]
+        fresh = [r for r in got if r["ogLmPpSeq"] not in seen_ids]
+        if not fresh:
+            break
+        rows += fresh
+        seen_ids |= {r["ogLmPpSeq"] for r in fresh}
+        if len(got) < PAGE_SIZE:
+            break
+        time.sleep(DELAY_SEC)
     if not rows:
-        log("목록 응답에 항목이 없다 — 응답 앞부분: %s" % redact(xml)[:400])
+        log("목록 응답에 항목이 없다")
         return None
     return rows
 
@@ -179,6 +229,11 @@ def fetch_body(row):
     return clean(m.group(1)) if m else ""
 
 
+def tidy_name(name):
+    """제명 앞에 붙는 [진행] 같은 상태 표시는 알림에서 군더더기다."""
+    return re.sub(r"^\s*\[[^\]]{1,6}\]\s*", "", name or "").strip()
+
+
 def hits_in(text):
     return [k for k in KEYWORDS if k in (text or "")]
 
@@ -192,12 +247,51 @@ def excerpt(text, keyword, width=140):
     return ("…" if s else "") + text[s:s + width] + "…"
 
 
+def fetch_assembly_notices():
+    """국회 입법예고(진행중) 전부. 한 쪽 100건씩 받는다."""
+    key = os.environ.get("ASSEMBLY_API_KEY", "").strip()
+    if not key:
+        log("ASSEMBLY_API_KEY 가 없다 — 국회 입법예고는 건너뛴다")
+        return []
+    rows, page = [], 1
+    while page <= 20:
+        raw = fetch("%s?KEY=%s&Type=json&pIndex=%d&pSize=%d"
+                    % (ASSEMBLY_ENDPOINT, key, page, ASSEMBLY_PAGE_SIZE))
+        if raw is None:
+            return None if page == 1 else rows
+        try:
+            data = json.loads(raw)
+        except Exception:
+            log("국회 응답이 JSON이 아니다")
+            return None if page == 1 else rows
+        if "RESULT" in data:            # 더 없으면 INFO-200 을 준다
+            break
+        try:
+            got = data["nknalejkafmvgzmpt"][1]["row"]
+        except Exception:
+            break
+        rows += got
+        if len(got) < ASSEMBLY_PAGE_SIZE:
+            break
+        page += 1
+        time.sleep(DELAY_SEC)
+    return rows
+
+
+def assembly_hits(name):
+    """의안명에서 걸리는 것: 관심 키워드가 직접 나오거나, 지정 법의 개정이거나."""
+    name = name or ""
+    found = [k for k in KEYWORDS if k in name]
+    laws = [w for w in WATCH_LAWS if w in name]
+    return found, laws
+
+
 def load_state():
     try:
         with open(STATE_PATH, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        return {"seen": [], "alerted": [], "last_run": None}
+        return {"seen": [], "alerted": [], "assembly_alerted": [], "last_run": None}
 
 
 def save_state(state):
@@ -226,6 +320,19 @@ def build_blocks(found):
                   "`, `".join(f["hits"]), f["excerpt"]))
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": txt}})
     return "입법예고 알림 %d건" % len(found), blocks
+
+
+def build_assembly_blocks(found):
+    head = "*🏛 국회 입법예고 — 관심 의안 %d건*" % len(found)
+    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": head}}]
+    for f in found:
+        why = ("키워드 `%s`" % "`, `".join(f["hits"])) if f["hits"] else ("지정 법 `%s`" % "`, `".join(f["laws"]))
+        txt = ("*<%s|%s>*\n%s · %s\n예고 종료 %s · 의안번호 %s\n걸린 이유: %s"
+               % (f.get("LINK_URL", ""), f.get("BILL_NAME", ""),
+                  f.get("PROPOSER", ""), f.get("CURR_COMMITTEE", ""),
+                  f.get("NOTI_ED_DT", ""), f.get("BILL_NO", ""), why))
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": txt}})
+    return blocks
 
 
 def main():
@@ -273,20 +380,47 @@ def main():
         found.append(row)
         log("적중 %s | %s | %s" % (seq, row.get("lsNm"), ", ".join(hits)))
 
+    # --- 국회 입법예고 ---
+    assembly_alerted = set(state.get("assembly_alerted", []))
+    assembly_found = []
+    arows = fetch_assembly_notices()
+    if arows is None:
+        log("국회 입법예고를 못 읽었다 — 이번엔 정부 쪽만 본다")
+    else:
+        log("국회 입법예고 %d건" % len(arows))
+        for r in arows:
+            bid = r.get("BILL_ID") or r.get("BILL_NO") or ""
+            if not bid or bid in assembly_alerted:
+                continue
+            hits, laws = assembly_hits(r.get("BILL_NAME"))
+            if not hits and not laws:
+                continue
+            r["hits"], r["laws"] = hits, laws
+            assembly_found.append(r)
+            log("국회 적중 %s | %s | %s"
+                % (r.get("BILL_NO"), r.get("BILL_NAME"), ", ".join(hits or laws)))
+
     ratio, health = api_health()
     log("조회 상태: %s" % health)
     if ratio >= FAILURE_ABORT_RATIO:
         log("실패율이 높아 이번 실행은 믿을 수 없다. 상태를 갱신하지 않는다.")
         return 1
 
+    blocks = []
     if found:
-        text, blocks = build_blocks(found)
+        _, blocks = build_blocks(found)
+    if assembly_found:
+        blocks += build_assembly_blocks(assembly_found)
+
+    if blocks:
+        text = "입법예고 알림 (정부 %d건, 국회 %d건)" % (len(found), len(assembly_found))
         if dry:
             log("--dry-run: 슬랙 전송 생략. 보냈을 내용:")
             print(json.dumps(blocks, ensure_ascii=False, indent=1))
         else:
-            log("슬랙 전송 완료 (HTTP %s), %d건" % (slack_send(webhook, text, blocks), len(found)))
+            log("슬랙 전송 완료 (HTTP %s) — %s" % (slack_send(webhook, text, blocks), text))
             alerted.update(f["ogLmPpSeq"] for f in found)
+            assembly_alerted.update((f.get("BILL_ID") or f.get("BILL_NO")) for f in assembly_found)
     else:
         log("관심 키워드에 걸린 새 입법예고 없음.")
 
@@ -296,9 +430,10 @@ def main():
 
     state["seen"] = sorted(seen, key=lambda s: -int(s))[:4000]
     state["alerted"] = sorted(alerted, key=lambda s: -int(s))[:500]
+    state["assembly_alerted"] = sorted(assembly_alerted)[-1000:]
     save_state(state)
-    log("상태 갱신 완료 (seen %d건, alerted %d건)"
-        % (len(state["seen"]), len(state["alerted"])))
+    log("상태 갱신 완료 (seen %d건, 정부 alerted %d건, 국회 alerted %d건)"
+        % (len(state["seen"]), len(state["alerted"]), len(state["assembly_alerted"])))
     return 0
 
 

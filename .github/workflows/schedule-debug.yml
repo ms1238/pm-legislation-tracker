@@ -58,4 +58,5 @@ jobs:
       - name: 입법예고 감시 시험 실행(슬랙·상태파일 없이)
         env:
           LAWMAKING_OC: ${{ steps.oc.outputs.oc }}
+          ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
         run: python automation/notice_watch.py --dry-run
