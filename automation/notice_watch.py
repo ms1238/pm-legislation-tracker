@@ -45,6 +45,8 @@ REST_URL = "https://www.lawmaking.go.kr/rest/ogLmPpMod/%s/0/TYPE5.xml?OC=%s"
 UA = {"User-Agent": "Mozilla/5.0 (compatible; pm-legislation-tracker/1.0)"}
 TIMEOUT = 25
 DELAY_SEC = 0.4
+# 한 쪽 20건. 첫 실행이나 오래 밀린 실행이 아니면 1~2쪽에서 끝난다.
+MAX_PAGES = 15
 
 # 이 트래커가 찾는 말. '자전거'는 '자전거도로'·'전기자전거'까지 함께 걸리라고
 # 통째로 둔다 — 이 분야에서 넓게 거는 쪽이 놓치는 쪽보다 낫다.
@@ -125,14 +127,10 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=1)
 
 
-def fetch_list():
-    """목록 화면에서 (번호, 제명, 소관부처, 접수기간)을 뽑는다."""
-    html = fetch(LIST_URL)
-    if not html:
-        return None
+def parse_page(html):
+    """목록 화면 한 쪽에서 (번호, 제명, 소관부처)를 뽑는다."""
     body = re.search(r"<tbody[^>]*>(.*?)</tbody>", html, re.S | re.I)
     if not body:
-        log("목록에서 tbody를 못 찾았다 — 화면 구조가 바뀌었을 수 있다")
         return None
     rows = []
     for tr in re.findall(r"<tr[^>]*>.*?</tr>", body.group(1), re.S | re.I):
@@ -144,8 +142,50 @@ def fetch_list():
             "no": a.group(1),
             "title": strip_tags(a.group(2)),
             "office": ps[0] if ps else "",
-            "period": " ".join(ps[3:5]) if len(ps) >= 5 else "",
         })
+    return rows
+
+
+def fetch_list(seen, max_pages=MAX_PAGES):
+    """목록을 최신순으로 훑는다.
+
+    한 쪽은 20건인데 열려 있는 예고는 200건이 넘는다. 평소에는 새 글이 1쪽 안에
+    다 있지만, 실행이 며칠 밀리거나 하루에 많이 올라오면 2쪽으로 넘어간다.
+    그래서 '이 쪽이 전부 이미 본 글'이면 거기서 멈추고, 아니면 계속 넘긴다.
+    """
+    html = fetch(LIST_URL)
+    if not html:
+        return None
+    first = parse_page(html)
+    if first is None:
+        log("목록에서 tbody를 못 찾았다 — 화면 구조가 바뀌었을 수 있다")
+        return None
+
+    total = re.search(r"전체\s*([\d,]+)\s*건", strip_tags(html))
+    log("목록 1쪽 %d건 (사이트가 밝힌 전체 %s건)"
+        % (len(first), total.group(1) if total else "?"))
+
+    rows = list(first)
+    known = {r["no"] for r in first}
+    if all(r["no"] in seen for r in first) and seen:
+        return rows  # 새 글이 없다 — 더 넘길 이유가 없다
+
+    for page in range(2, max_pages + 1):
+        html = fetch("%s?page=%d" % (LIST_URL, page))
+        if not html:
+            break
+        more = parse_page(html) or []
+        fresh_nos = {r["no"] for r in more} - known
+        if not fresh_nos:
+            # page 파라미터가 안 먹으면 1쪽이 그대로 다시 온다. 그때도 여기서 멈춘다.
+            log("%d쪽에서 새 행이 없어 멈춘다(총 %d건 수집)" % (page, len(rows)))
+            break
+        rows += [r for r in more if r["no"] in fresh_nos]
+        known |= fresh_nos
+        time.sleep(DELAY_SEC)
+        if all(r["no"] in seen for r in more) and seen:
+            log("%d쪽이 전부 이미 본 글이라 멈춘다(총 %d건 수집)" % (page, len(rows)))
+            break
     return rows
 
 
@@ -221,11 +261,11 @@ def main():
     first_run = not seen
     log("상태 파일: 본 적 있는 예고 %d건%s" % (len(seen), " (첫 실행)" if first_run else ""))
 
-    rows = fetch_list()
+    rows = fetch_list(seen)
     if rows is None:
         log("목록을 못 읽었다. 상태를 건드리지 않고 종료한다.")
         return 1
-    log("목록 %d건" % len(rows))
+    log("목록에서 모은 예고 %d건" % len(rows))
 
     fresh = [r for r in rows if r["no"] not in seen]
     log("이번에 새로 본 예고 %d건" % len(fresh))
