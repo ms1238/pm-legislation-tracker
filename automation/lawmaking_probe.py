@@ -2,8 +2,7 @@
 """국민참여입법센터(입법예고) 조회 경로 진단용 스크립트.
 
 목적: "킥보드·개인형 이동장치·자전거·전기자전거 관련 입법예고가 뜨면 알림"이
-      기술적으로 가능한지 확인한다. 즉 (1) 목록을 어떤 경로로 읽을 수 있는가,
-      (2) 무엇으로 걸러낼 수 있는가, (3) 새 글을 식별할 키가 있는가.
+      기술적으로 가능한지 확인한다.
 
 성격: schedule_debug.py와 같은 진단 도구다. 상태 파일을 쓰지 않고, 슬랙도 보내지
       않는다. 읽고 출력만 한다. 손으로만 실행한다.
@@ -11,38 +10,39 @@
 주의: lawmaking.go.kr 도메인은 개발 컨테이너의 egress 정책에서 막혀 있다.
       GitHub Actions 러너에서 실행하는 것을 전제로 한다.
 
-1차 진단에서 확인한 것:
-  - opinion.lawmaking.go.kr/api/apiGuideInfo 는 HTTP 200에 본문 0바이트다
-    (문서가 화면 스크립트로 그려지는 듯). 문서로는 스펙을 못 얻는다.
-  - www.lawmaking.go.kr/rest/... 는 짐작한 이름 전부 404였고, 200이 온 하나도
-    JSON이 아니라 공통 HTML 껍데기였다. 엔드포인트 이름은 추측으로 못 맞춘다.
-  - law.go.kr 계열은 OC가 있어도 "서버장비 IP·도메인 등록" 검증을 건다.
-  - 반면 공개 목록 화면(opinion.lawmaking.go.kr/gcom/ogLmPp)은 서버가 그린
-    HTML로 233건이 그대로 들어 있었다.
+지금까지 확인한 것:
+  - 상세 조회 API 주소는 아래 형태다(사용자 제공):
+      https://www.lawmaking.go.kr/rest/ogLmPpMod/{ogLmPpSeq}/{mappingLbicId}/{announceType}.xml?OC=...
+    본문은 출력변수 lmPpCts 에 들어간다. 우리가 키워드를 걸 자리가 여기다.
+  - 목록은 서버가 그린 화면(opinion.lawmaking.go.kr/gcom/ogLmPp)으로 통째로 온다.
+    폼 필드 중 lsNm(법령 제명)은 GET 파라미터로 그대로 먹는다(자전거 → 1건).
+  - 다만 목록에서 ogLmPpSeq·mappingLbicId 를 어떻게 얻는지가 아직 미해결이다.
+    이 둘이 없으면 상세 API를 부를 수 없다.
 
-그래서 2차는 세 가지를 본다:
-  A. 목록 화면 HTML에서 진짜 식별자(ogLmPpSeq 등)를 뽑아, 사용자가 알려준
-     REST 상세 URL에 실제 값을 넣어 호출한다 — 응답이 JSON인지, OC/IP 검증을
-     거는지 확인.
-  B. 목록 화면의 검색 파라미터(제명·기간·부처)가 GET으로 먹는지 — '킥보드',
-     '개인형 이동장치'로 실제 검색해 본다.
-  C. 상세 화면 본문에 키워드가 실리는지 — 제명만으로는 PM 관련 개정을 놓친다.
+그래서 이번엔 세 가지를 본다:
+  1. 사용자가 준 예제 URL을 OC를 바꿔 그대로 호출 — 인증이 통하는지, lmPpCts가
+     실제로 오는지, 응답 필드가 무엇인지.
+  2. 목록 화면 HTML 원문에서 상세로 넘어가는 링크의 실제 모양 — seq·id가 어디에
+     실려 있는지.
+  3. lsNm 검색이 관심 키워드에 대해 무엇을 돌려주는지.
 
 OC(승인 아이디)는 LAWMAKING_OC 환경변수로 받는다. 이 저장소는 퍼블릭이므로
 파일에 적지 않고, 출력할 때도 가린다.
 """
-import os, re, sys, json, time, urllib.request, urllib.parse, urllib.error
+import os, re, sys, time, urllib.request, urllib.parse, urllib.error
 
 OC = os.environ.get("LAWMAKING_OC", "").strip()
 UA = {"User-Agent": "Mozilla/5.0 (compatible; pm-legislation-tracker/1.0)"}
 TIMEOUT = 25
 
 LIST_URL = "https://opinion.lawmaking.go.kr/gcom/ogLmPp"
+REST_BASE = "https://www.lawmaking.go.kr/rest/ogLmPpMod"
 
-# 이 트래커가 찾는 말들. 제명에만 걸면 "도로교통법 시행령 일부개정령안"처럼
-# 본문에서야 정체가 드러나는 건을 놓친다.
+# 문서에 실린 예제 건. 값이 살아 있는지와 무관하게 응답 형태는 확인할 수 있다.
+SAMPLE = ("28212", "2000000141134", "TYPE5")
+
 KEYWORDS = ["개인형 이동장치", "개인형이동장치", "전동킥보드", "킥보드",
-            "자전거", "전기자전거", "퍼스널 모빌리티", "퍼스널모빌리티", "이동장치"]
+            "자전거", "전기자전거", "퍼스널 모빌리티", "퍼스널모빌리티"]
 
 
 def redact(text):
@@ -52,42 +52,36 @@ def redact(text):
     return text
 
 
-def fetch(url, label="", data=None):
-    """(status, content_type, body_text)를 돌려준다. 실패해도 예외를 올리지 않는다."""
-    print("\n>>> %s %s  %s" % ("POST" if data else "GET", redact(url), label))
-    body_bytes = urllib.parse.urlencode(data).encode() if data else None
-    req = urllib.request.Request(url, data=body_bytes, headers=UA)
+def fetch(url, label=""):
+    print("\n>>> GET %s  %s" % (redact(url), label))
+    req = urllib.request.Request(url, headers=UA)
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
             raw = resp.read()
-            ctype = resp.headers.get("Content-Type", "")
-            print("    HTTP %s | %s | %d bytes" % (resp.status, ctype, len(raw)))
-            return resp.status, ctype, raw.decode("utf-8", "replace")
+            print("    HTTP %s | %s | %d bytes"
+                  % (resp.status, resp.headers.get("Content-Type", ""), len(raw)))
+            return resp.status, raw.decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         try:
             b = e.read().decode("utf-8", "replace")
         except Exception:
             b = ""
         print("    HTTP %s (오류) | %d bytes" % (e.code, len(b)))
-        return e.code, "", b
+        return e.code, b
     except Exception as e:
         print("    실패: %r" % (e,))
-        return None, "", ""
+        return None, ""
 
 
-TAG_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.S | re.I)
 ANY_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def strip_tags(html):
-    t = TAG_RE.sub(" ", html)
-    t = re.sub(r"</(tr|div|p|li|h[1-6]|table)>", "\n", t, flags=re.I)
-    t = re.sub(r"</t[dh]>", " | ", t, flags=re.I)
-    t = ANY_TAG_RE.sub("", t)
-    for a, b in [("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&#39;", "'")]:
+    t = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+    t = ANY_TAG_RE.sub(" ", t)
+    for a, b in [("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"')]:
         t = t.replace(a, b)
-    lines = [re.sub(r"[ \t]+", " ", ln).strip(" |") for ln in t.split("\n")]
-    return "\n".join(ln for ln in lines if ln.strip())
+    return re.sub(r"\s+", " ", t).strip()
 
 
 def show(text, limit, label="본문"):
@@ -99,113 +93,93 @@ def show(text, limit, label="본문"):
     print("--- 끝 ---")
 
 
-def step_a_ids():
-    """목록 화면에서 상세로 넘어가는 링크·파라미터를 뽑는다."""
+def step1_sample_detail():
+    """예제 URL을 그대로 호출해 인증과 응답 필드를 확인한다."""
     print("\n" + "=" * 70)
-    print("STEP A. 목록 화면에서 상세 식별자 추출")
+    print("STEP 1. 상세 조회 API — 문서 예제 그대로 호출")
     print("=" * 70)
-    st, ctype, html = fetch(LIST_URL, "(부처 입법예고 목록)")
-    if st != 200 or not html:
-        return None, []
+    if not OC:
+        print("LAWMAKING_OC 가 비어 있다. 인증 결과는 판정할 수 없다.")
 
-    total = re.search(r"전체\s*([\d,]+)\s*건", strip_tags(html))
-    print("    목록이 밝힌 총 건수: %s" % (total.group(1) if total else "(못 찾음)"))
-
-    # 상세 이동은 대개 자바스크립트 함수 호출이다. 인자 묶음을 통째로 본다.
-    calls = re.findall(r"(?:onclick|href)\s*=\s*[\"']\s*(?:javascript:)?([A-Za-z_]\w*)\(([^)]*)\)", html)
-    seen = {}
-    for fn, args in calls:
-        seen.setdefault(fn, []).append(args.strip())
-    print("\n    화면에서 쓰는 이동 함수(상위 12개):")
-    for fn, argl in sorted(seen.items(), key=lambda kv: -len(kv[1]))[:12]:
-        print("      %-28s %d회, 예: %s" % (fn, len(argl), argl[0][:120]))
-
-    # 폼 필드 이름 — 검색 파라미터 후보다.
-    fields = sorted(set(re.findall(r'<(?:input|select)[^>]*\bname=["\']([^"\']+)["\']', html)))
-    print("\n    목록 화면 폼 필드(%d개): %s" % (len(fields), ", ".join(fields)))
-
-    forms = re.findall(r'<form[^>]*action=["\']([^"\']+)["\'][^>]*>', html, re.I)
-    print("    form action: %s" % (", ".join(sorted(set(forms))) or "(없음)"))
-
-    # 숫자 식별자 후보
-    seqs = re.findall(r"ogLmPpSeq['\"]?\s*[:=]\s*['\"]?(\d+)", html)
-    seqs += re.findall(r"lmPpSeq['\"]?\s*[:=]\s*['\"]?(\d+)", html)
-    print("    본문에 박힌 seq 후보: %s" % (sorted(set(seqs))[:10] or "(없음)"))
-    return html, sorted(set(seqs))
-
-
-def step_b_search():
-    """목록 화면 검색이 GET 파라미터로 먹는지 — 이게 되면 알림은 사실상 끝이다."""
-    print("\n" + "=" * 70)
-    print("STEP B. 목록 검색 파라미터 실측")
-    print("=" * 70)
-    q = urllib.parse.quote
-    trials = [
-        ("제명검색 없음(기준)", ""),
-        ("lmttNm=자전거", "?lmttNm=%s" % q("자전거")),
-        ("searchNm=자전거", "?searchNm=%s" % q("자전거")),
-        ("lsNm=자전거", "?lsNm=%s" % q("자전거")),
-        ("searchWord=자전거", "?searchWord=%s" % q("자전거")),
-        ("srchWrd=자전거", "?srchWrd=%s" % q("자전거")),
-    ]
-    for label, qs in trials:
-        st, ctype, html = fetch(LIST_URL + qs, "(%s)" % label)
-        if st == 200 and html:
-            txt = strip_tags(html)
-            m = re.search(r"전체\s*([\d,]+)\s*건", txt)
-            hits = [k for k in KEYWORDS if k in txt]
-            print("    → 총 %s건 | 화면에 보이는 키워드: %s"
-                  % (m.group(1) if m else "?", ", ".join(hits) or "없음"))
+    seq, lbic, atype = SAMPLE
+    for oc_label, oc_val in [("내 OC", OC), ("test", "test")]:
+        if not oc_val:
+            continue
+        url = "%s/%s/%s/%s.xml?OC=%s" % (REST_BASE, seq, lbic, atype, oc_val)
+        st, body = fetch(url, "(%s / XML)" % oc_label)
+        if not body:
+            continue
+        tags = []
+        for t in re.findall(r"<([A-Za-z_][\w.\-]*)[ >]", body):
+            if t not in tags:
+                tags.append(t)
+        print("    응답에 등장한 태그(%d종): %s" % (len(tags), ", ".join(tags[:60])))
+        m = re.search(r"<lmPpCts>(.*?)</lmPpCts>", body, re.S)
+        if m:
+            cts = strip_tags(m.group(1))
+            print("    lmPpCts 발견 — 길이 %d자" % len(cts))
+            show(cts, 1200, "lmPpCts 앞부분")
+            print("    키워드 적중: %s"
+                  % (", ".join(k for k in KEYWORDS if k in cts) or "없음"))
+        else:
+            print("    lmPpCts 없음 — 응답 앞부분을 그대로 보인다")
+            show(body, 1500, "응답 원문")
         time.sleep(0.4)
 
 
-def step_c_detail(seqs):
-    """사용자가 알려준 REST 상세 URL에 실제 값을 넣어 본다."""
+def step2_list_links():
+    """목록 화면 HTML에서 상세로 넘어가는 실제 링크 모양을 찾는다."""
     print("\n" + "=" * 70)
-    print("STEP C. REST 상세 URL 실측")
+    print("STEP 2. 목록 화면에서 ogLmPpSeq / mappingLbicId 찾기")
     print("=" * 70)
-    if not OC:
-        print("LAWMAKING_OC 가 비어 있다 — 인증이 필요한 호출은 실패할 수 있다.")
-    if not seqs:
-        print("목록에서 seq를 못 뽑았다. 알려진 형태만 확인한다.")
-    for seq in (seqs or [])[:3]:
-        for tail in ["/0/1", "/1/1", ""]:
-            u = "https://www.lawmaking.go.kr/rest/ogLmPpMod/%s%s" % (seq, tail)
-            for suffix in ["?OC=%s&type=JSON" % OC, ""]:
-                st, ctype, body = fetch(u + suffix, "(상세)")
-                if st == 200 and body:
-                    if body.lstrip()[:1] in "{[":
-                        show(body, 2500, "JSON 응답")
-                    else:
-                        show(strip_tags(body), 800, "HTML 응답")
-                time.sleep(0.3)
+    st, html = fetch(LIST_URL, "(부처 입법예고 목록)")
+    if st != 200 or not html:
+        return
 
+    for name in ["ogLmPpSeq", "mappingLbicId", "announceType", "lbicId", "ppSeq"]:
+        hits = [m.start() for m in re.finditer(name, html)]
+        print("    '%s' 등장 %d회" % (name, len(hits)))
+        for pos in hits[:2]:
+            show(html[max(0, pos - 220): pos + 220], 460, "'%s' 주변 원문" % name)
 
-def step_d_guide():
-    """API 활용가이드를 다른 방법으로 얻어 본다(POST / 파라미터 / 안내 메뉴)."""
-    print("\n" + "=" * 70)
-    print("STEP D. API 활용가이드 재시도")
-    print("=" * 70)
-    st, ctype, body = fetch("https://opinion.lawmaking.go.kr/api/apiGuideInfo",
-                            "(POST 시도)", data={"apiSeq": "1"})
+    # 목록 표의 첫 행 원문을 그대로 본다 — 링크가 어떤 모양인지 눈으로 확인.
+    body = re.search(r"<tbody[^>]*>(.*?)</tbody>", html, re.S | re.I)
     if body:
-        show(strip_tags(body) if "<" in body[:200] else body, 3000, "POST 응답")
+        rows = re.findall(r"<tr[^>]*>.*?</tr>", body.group(1), re.S | re.I)
+        print("\n    tbody에서 찾은 행 %d개. 첫 행 원문:" % len(rows))
+        if rows:
+            show(rows[0], 2500, "첫 행 HTML")
+    else:
+        print("\n    tbody를 못 찾았다. a 태그 중 상세로 보이는 것들:")
+        for a in re.findall(r"<a\b[^>]*>", html)[:40]:
+            if any(k in a for k in ("ogLmPp", "Info", "detail", "Detail", "View")):
+                print("      %s" % a[:220])
 
-    for u in ["https://opinion.lawmaking.go.kr/api/apiGuideInfo?apiSeq=1",
-              "https://opinion.lawmaking.go.kr/gcom/lmInfoOpen",
-              "https://opinion.lawmaking.go.kr/gcom/infoOpenUse"]:
-        st, ctype, body = fetch(u, "(가이드 후보)")
-        if st == 200 and body:
-            show(strip_tags(body), 2500, u)
-        time.sleep(0.3)
+
+def step3_keyword_search():
+    """lsNm(제명) 검색이 관심 키워드에 무엇을 돌려주는지."""
+    print("\n" + "=" * 70)
+    print("STEP 3. 제명(lsNm) 검색 결과")
+    print("=" * 70)
+    for kw in ["자전거", "도로교통", "킥보드", "이동장치"]:
+        for extra in ["", "&finishIncludeYn=Y"]:
+            u = "%s?lsNm=%s%s" % (LIST_URL, urllib.parse.quote(kw), extra)
+            st, html = fetch(u, "(lsNm=%s%s)" % (kw, " 종료포함" if extra else ""))
+            if st == 200 and html:
+                txt = strip_tags(html)
+                m = re.search(r"전체\s*([\d,]+)\s*건", txt)
+                print("    → 총 %s건" % (m.group(1) if m else "?"))
+                names = re.findall(r"([가-힣A-Za-z0-9·ㆍ\s]{4,60}(?:일부개정령안|제정안|전부개정령안|일부개정법률안))", txt)
+                for n in list(dict.fromkeys(names))[:8]:
+                    print("       · %s" % n.strip())
+            time.sleep(0.4)
 
 
 def main():
     print("입법예고 조회 경로 진단 시작 (OC %s)" % ("설정됨" if OC else "없음"))
-    html, seqs = step_a_ids()
-    step_b_search()
-    step_c_detail(seqs)
-    step_d_guide()
+    step1_sample_detail()
+    step2_list_links()
+    step3_keyword_search()
     print("\n진단 끝.")
     return 0
 

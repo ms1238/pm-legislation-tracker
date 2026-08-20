@@ -4,6 +4,11 @@ name: 국회 일정 조회 진단
 
 on:
   workflow_dispatch:
+    inputs:
+      oc:
+        description: "입법예고 API의 OC(승인 아이디). 비우면 secrets.LAWMAKING_OC 를 쓴다."
+        required: false
+        type: string
 
 jobs:
   debug:
@@ -28,7 +33,19 @@ jobs:
       - name: 러너 공인 IP (법제처 계열은 등록 IP로 호출자를 검증한다)
         run: curl -s --max-time 10 https://api.ipify.org || true
 
+      - name: OC 결정 및 로그 마스킹
+        id: oc
+        env:
+          INPUT_OC: ${{ inputs.oc }}
+          SECRET_OC: ${{ secrets.LAWMAKING_OC }}
+        run: |
+          OC="${INPUT_OC:-$SECRET_OC}"
+          # 이 저장소는 퍼블릭이라 실행 로그도 공개된다. 입력으로 받은 값은
+          # 자동 마스킹 대상이 아니므로 여기서 직접 가린다.
+          echo "::add-mask::$OC"
+          echo "oc=$OC" >> "$GITHUB_OUTPUT"
+
       - name: 입법예고 API 진단
         env:
-          LAWMAKING_OC: ${{ secrets.LAWMAKING_OC }}
+          LAWMAKING_OC: ${{ steps.oc.outputs.oc }}
         run: python automation/lawmaking_probe.py
