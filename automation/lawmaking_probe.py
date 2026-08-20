@@ -1,19 +1,21 @@
 # -*- coding: utf-8 -*-
-"""입법예고 목록 조회 API를 찾는 진단 스크립트.
+"""입법예고 목록 조회 API의 범위·페이징·필터를 확정하는 진단 스크립트.
 
-왜 중요한가:
-  지금 감시는 "무슨 번호가 새로 올라왔나"를 알아내려고 웹 목록 화면을 긁는다.
-  화면 구조에 기대는 유일한 부분이고, 실제로 제명 검색 결과 페이지에서 행을
-  못 뽑는 문제가 났다. 목록 조회 API가 있으면 그 부분이 통째로 없어진다.
+왜 필요한가:
+  diff=0(진행중)으로 목록을 불렀더니 20건만 왔다. 사이트 화면은 같은 조건에서
+  233건이라고 한다. 20건이면 최신 하루치 남짓이라, 하루 한 번 도는 감시로는
+  평소엔 충분해도 첫 실행과 밀린 실행에서 구멍이 난다.
 
-  상세 조회는 이미 확인됐다.
-      https://www.lawmaking.go.kr/rest/ogLmPpMod/{ogLmPpSeq}/{mappingLbicId}/{announceType}.xml?OC=...
-  같은 경로에 경로변수 없이 부르는 형태가 목록이라고 하므로, 그 변형들을 던져
-  응답 형태로 판별한다.
+  문서의 요청변수에는 페이징이 없다(OC lsClsCd cptOfiOrgCd diff pntcNo pntcNo2
+  stYdFmt edYdFmt lsNm). 그러니 둘 중 하나다.
+    - 문서에 없는 페이징 파라미터가 먹는다 → 그걸 쓴다.
+    - 안 먹는다 → 필터로 쪼개서 나눠 받는다(법령종류 6개, 예고일자 구간).
+
+  겸사겸사 lsNm 필터가 API에서 실제로 먹는지도 못 박는다. 화면 쪽 제명 검색은
+  결과 행을 못 뽑았지만, API에서 되면 지정 법 감시는 그쪽으로 하면 된다.
 
 성격: 진단 도구다. 상태 파일을 쓰지 않고 슬랙도 보내지 않는다. 손으로만 실행한다.
-주의: lawmaking.go.kr 은 개발 컨테이너에서 막혀 있어 러너에서만 돈다.
-      OC는 LAWMAKING_OC 환경변수로 받고, 출력할 때 가린다(이 저장소는 퍼블릭이다).
+주의: OC는 LAWMAKING_OC 환경변수로 받고 출력할 때 가린다(이 저장소는 퍼블릭이다).
 """
 import os, re, sys, time, urllib.request, urllib.parse
 
@@ -22,84 +24,115 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; pm-legislation-tracker/1.0)"}
 TIMEOUT = 25
 REST = "https://www.lawmaking.go.kr/rest/ogLmPpMod"
 
+# 문서에 실린 법령종류 코드
+LS_CLS = [("AA0101", "법률"), ("AA0102", "대통령령"), ("AA0103", "총리령"),
+          ("AA0104", "부령"), ("AA0105", "대통령훈령"), ("AA0106", "국무총리훈령")]
+
 
 def redact(t):
     return t.replace(OC, "***OC***") if (OC and t) else t
 
 
 def fetch(url, tries=2):
-    print("\n>>> GET %s" % redact(url))
     req = urllib.request.Request(url, headers=UA)
     for attempt in range(1, tries + 1):
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                raw = resp.read()
-                print("    HTTP %s | %s | %d bytes"
-                      % (resp.status, resp.headers.get("Content-Type", ""), len(raw)))
-                return resp.status, raw.decode("utf-8", "replace")
+                return resp.read().decode("utf-8", "replace")
         except Exception as e:
-            print("    시도 %d/%d 실패: %r" % (attempt, tries, e))
-            if attempt < tries:
-                time.sleep(2)
-    return None, ""
+            if attempt == tries:
+                print("    조회 실패 %s — %r" % (redact(url), e))
+                return None
+            time.sleep(2)
+    return None
 
 
-def describe(body):
-    """응답이 목록인지 아닌지 눈으로 판별할 수 있게 요약한다."""
-    if not body:
+def seqs_of(xml):
+    return re.findall(r"<ogLmPpSeq>(\d+)</ogLmPpSeq>", xml or "")
+
+
+def names_of(xml):
+    return [re.sub(r"\s+", " ", n).strip()
+            for n in re.findall(r"<lsNm>(.*?)</lsNm>", xml or "", re.S)]
+
+
+def ask(label, query):
+    url = "%s.xml?OC=%s&%s" % (REST, urllib.parse.quote(OC), query)
+    xml = fetch(url)
+    if xml is None:
+        return []
+    s = seqs_of(xml)
+    print("    %-34s → %3d건  %s" % (label, len(s),
+                                     "min %s max %s" % (min(s), max(s)) if s else ""))
+    return s
+
+
+def step1_paging():
+    """문서에 없는 페이징 파라미터가 먹는지 본다. 1쪽과 번호가 달라지면 먹는 것이다."""
+    print("\n" + "=" * 70)
+    print("STEP 1. 페이징 파라미터가 있는가")
+    print("=" * 70)
+    base = ask("기준(diff=0)", "diff=0")
+    if not base:
         return
-    head = body.lstrip()[:1]
-    if head == "<" and "<!DOCTYPE" in body[:200].upper():
-        print("    → HTML 화면이 왔다(목록 API가 아니다)")
-        return
-    tags = []
-    for t in re.findall(r"<([A-Za-z_][\w.\-]*)[ >]", body):
-        if t not in tags:
-            tags.append(t)
-    print("    태그(%d종): %s" % (len(tags), ", ".join(tags[:40])))
-    for tag in ["totalCnt", "totalCount", "resultCount", "numOfRows", "page"]:
-        m = re.search(r"<%s>(.*?)</%s>" % (tag, tag), body)
-        if m:
-            print("    %s = %s" % (tag, m.group(1).strip()))
-    seqs = re.findall(r"<ogLmPpSeq>(\d+)</ogLmPpSeq>", body)
-    names = re.findall(r"<lsNm>(.*?)</lsNm>", body, re.S)
-    print("    ogLmPpSeq %d개: %s" % (len(seqs), seqs[:10]))
-    print("    lsNm %d개: %s" % (len(names), [n.strip()[:40] for n in names[:5]]))
-    if len(seqs) > 1:
-        print("    *** 여러 건이 왔다 — 목록 조회로 보인다 ***")
-    print("    앞부분: %s" % redact(re.sub(r"\s+", " ", body))[:600])
+    for name in ["page", "pageIndex", "pageNo", "currentPageNo", "pageUnit",
+                 "display", "numOfRows", "rows", "pageSize"]:
+        val = "100" if name in ("display", "numOfRows", "rows", "pageSize", "pageUnit") else "2"
+        got = ask("diff=0&%s=%s" % (name, val), "diff=0&%s=%s" % (name, val))
+        if got and (len(got) != len(base) or set(got) - set(base)):
+            print("        *** '%s' 가 먹는다 ***" % name)
+        time.sleep(0.3)
+
+
+def step2_partition():
+    """페이징이 없으면 필터로 쪼개야 한다. 법령종류별로 나눠 받으면 몇 건이 되나."""
+    print("\n" + "=" * 70)
+    print("STEP 2. 법령종류로 쪼개기")
+    print("=" * 70)
+    total = set()
+    for code, name in LS_CLS:
+        got = ask("lsClsCd=%s (%s)" % (code, name), "diff=0&lsClsCd=%s" % code)
+        total |= set(got)
+        time.sleep(0.3)
+    print("    쪼개서 모은 합계: %d건 (중복 제거)" % len(total))
+
+
+def step3_dates():
+    """예고일자 구간으로도 쪼갤 수 있는지. 형식은 문서상 YYYY.MM.DD 다."""
+    print("\n" + "=" * 70)
+    print("STEP 3. 예고일자 구간으로 쪼개기")
+    print("=" * 70)
+    for st, ed in [("2026.7.1.", "2026.7.31."), ("2026.8.1.", "2026.8.31.")]:
+        ask("stYdFmt=%s edYdFmt=%s" % (st, ed),
+            "diff=0&stYdFmt=%s&edYdFmt=%s" % (urllib.parse.quote(st), urllib.parse.quote(ed)))
+        time.sleep(0.3)
+
+
+def step4_lsnm():
+    """지정 법 검색이 API에서 먹는지. 화면 쪽은 행을 못 뽑았다."""
+    print("\n" + "=" * 70)
+    print("STEP 4. lsNm(예고명) 필터")
+    print("=" * 70)
+    for kw in ["도로교통", "자전거", "주차장", "자동차관리", "개인정보", "킥보드"]:
+        got = ask("lsNm=%s (진행중)" % kw, "diff=0&lsNm=%s" % urllib.parse.quote(kw))
+        if not got:
+            got = ask("lsNm=%s (상태무관)" % kw, "lsNm=%s" % urllib.parse.quote(kw))
+        if got:
+            xml = fetch("%s.xml?OC=%s&lsNm=%s" % (REST, urllib.parse.quote(OC),
+                                                  urllib.parse.quote(kw)))
+            for n in names_of(xml)[:5]:
+                print("          · %s" % n[:70])
+        time.sleep(0.3)
 
 
 def main():
     if not OC:
         print("LAWMAKING_OC 가 없다. 종료.")
         return 1
-    print("목록 조회 API 탐색 시작")
-
-    oc = urllib.parse.quote(OC)
-    bike = urllib.parse.quote("자전거")
-    # 문서에 실린 형태:
-    #   ogLmPpMod.xml?OC=..&lsClsCd=AA0103&diff=0     법령종류 총리령 + 진행중
-    #   ogLmPpMod.html?OC=..&cptOfiOrgCd=1613000&lsNm=건축법   부처 + 예고명 포함
-    # 우리에게 중요한 건 diff(진행중만)와 lsNm(예고명 부분일치)이다.
-    candidates = [
-        ("전체", "%s.xml?OC=%s" % (REST, oc)),
-        ("진행중만 diff=0", "%s.xml?OC=%s&diff=0" % (REST, oc)),
-        ("문서 예제(총리령+진행중)", "%s.xml?OC=%s&lsClsCd=AA0103&diff=0" % (REST, oc)),
-        ("예고명 '자전거'", "%s.xml?OC=%s&lsNm=%s" % (REST, oc, bike)),
-        ("예고명 '도로교통'+진행중", "%s.xml?OC=%s&lsNm=%s&diff=0"
-         % (REST, oc, urllib.parse.quote("도로교통"))),
-        ("예고명 '킥보드'(본문검색 되는지)", "%s.xml?OC=%s&lsNm=%s"
-         % (REST, oc, urllib.parse.quote("킥보드"))),
-    ]
-    for label, url in candidates:
-        print("\n### %s" % label)
-        st, body = fetch(url, tries=2)
-        if st is None:
-            continue
-        describe(body)
-        time.sleep(0.4)
-
+    step1_paging()
+    step2_partition()
+    step3_dates()
+    step4_lsnm()
     print("\n진단 끝.")
     return 0
 
