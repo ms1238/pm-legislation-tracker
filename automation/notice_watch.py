@@ -144,7 +144,10 @@ def now_kst():
 
 
 def log(msg):
-    print("[%s] %s" % (now_kst().strftime("%Y-%m-%d %H:%M:%S"), msg))
+    # flush 가 없으면 파이썬은 파이프로 나갈 때 8KB 씩 모아서 내보낸다. 러너에서는
+    # 그 8KB 가 차기 전에 실행이 끝나거나 취소되고, 그러면 그동안 찍은 로그가
+    # 통째로 사라진다 — 살아 있는 실행과 죽은 실행이 똑같이 빈 화면으로 보인다.
+    print("[%s] %s" % (now_kst().strftime("%Y-%m-%d %H:%M:%S"), msg), flush=True)
 
 
 def oc():
