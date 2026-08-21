@@ -71,6 +71,11 @@ TIMEOUT = 25
 # 서버가 조금만 느려지면 25초를 넘겨 타임아웃이 났다(실측 3회 중 2회). 목록에만
 # 넉넉한 시간을 준다.
 LIST_TIMEOUT = 90
+# 목록은 분 단위로 됐다 안 됐다 한다 — 같은 요청이 1.8초에 오다가 100초 뒤에는
+# 60초를 줘도 안 왔다(실측). 몇 초 뒤에 다시 거는 건 의미가 없고, 창이 열릴 때까지
+# 기다려야 한다. 이 작업 전체가 목록 하나에 달려 있어 여기만 오래 버틴다.
+LIST_RETRY_WAITS = [90, 180, 300]
+LIST_TRIES = 4
 # 0.4초는 초당 2.5건이다. 200건을 그 속도로 밀면 상대가 조여도 이상하지 않다.
 # 하루 한 번 도는 작업이라 급할 이유가 없어 넉넉히 벌린다.
 DELAY_SEC = 1.5
@@ -166,11 +171,17 @@ def redact(text):
     return text.replace(oc(), "***OC***") if (oc() and text) else text
 
 
-def fetch(url, tries=3, timeout=None):
-    """(본문 또는 None). 러너에서 .go.kr 연결은 자주 끊겨서 재시도한다."""
+def fetch(url, tries=3, timeout=None, waits=None):
+    """(본문 또는 None). 러너에서 .go.kr 연결은 자주 끊겨서 재시도한다.
+
+    waits 는 실패 뒤 얼마나 기다렸다 다시 걸지다. 기본값은 몇 초짜리 잡음을
+    넘기는 용도고, 목록처럼 분 단위로 됐다 안 됐다 하는 요청에는 호출하는 쪽에서
+    훨씬 긴 간격을 준다.
+    """
     global API_ATTEMPTS, API_FAILURES
     API_ATTEMPTS += 1
     req = urllib.request.Request(url, headers=UA)
+    waits = list(waits or [2, 4, 8])
     for attempt in range(1, tries + 1):
         try:
             with urllib.request.urlopen(req, timeout=timeout or TIMEOUT) as resp:
@@ -180,7 +191,9 @@ def fetch(url, tries=3, timeout=None):
                 log("조회 실패 %s — %r" % (redact(url), e))
                 API_FAILURES += 1
                 return None
-            time.sleep(2 * attempt)
+            wait = waits[min(attempt, len(waits)) - 1]
+            log("  %d번째 실패(%r) — %d초 뒤 다시 건다" % (attempt, e, wait))
+            time.sleep(wait)
     return None
 
 
@@ -243,7 +256,8 @@ def fetch_open_notices():
         t0 = time.time()
         xml = fetch("%s.xml?OC=%s&diff=0&pageSize=%d&pageIndex=%d"
                     % (REST, urllib.parse.quote(oc()), PAGE_SIZE, page),
-                    timeout=LIST_TIMEOUT)
+                    tries=LIST_TRIES, timeout=LIST_TIMEOUT,
+                    waits=LIST_RETRY_WAITS)
         # 목록이 이 작업에서 가장 잘 실패하는 지점이다. 쪽마다 얼마나 걸렸는지
         # 남겨 둬야 다음에 또 느려졌을 때 짐작이 아니라 기록으로 볼 수 있다.
         log("목록 %d쪽: %.1f초%s" % (page, time.time() - t0, "" if xml else " — 실패"))
