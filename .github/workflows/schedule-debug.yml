@@ -12,6 +12,7 @@ on:
         type: choice
         options:
           - ping          # 입법예고 서버가 러너에서 닿는지 한 건만 물어본다
+          - probe         # 목록을 쪽 크기별로 재 본다(어느 크기부터 막히는지)
           - inspect       # 입법예고 한 건을 열어 본문·첨부 판정을 본다
           - sweep         # 감시를 통째로 시험 실행한다(슬랙·상태파일 없이)
           - schedule      # 국회 일정 조회 진단
@@ -52,6 +53,13 @@ jobs:
           PYTHONUNBUFFERED: "1"
           LAWMAKING_OC: ${{ secrets.LAWMAKING_OC }}
         run: python automation/notice_watch.py --ping
+
+      - name: 목록 쪽 크기 재보기
+        if: ${{ inputs.mode == 'probe' }}
+        env:
+          PYTHONUNBUFFERED: "1"
+          LAWMAKING_OC: ${{ secrets.LAWMAKING_OC }}
+        run: python automation/notice_watch.py --probe
 
       - name: 입법예고 한 건 열어보기
         if: ${{ inputs.mode == 'inspect' }}
