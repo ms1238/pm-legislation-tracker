@@ -608,7 +608,39 @@ def ping():
     return 0
 
 
+def probe_page_sizes(sizes=(1, 10, 20, 30, 50)):
+    """쪽 크기를 바꿔 가며 목록을 불러 본다.
+
+    1건은 오는데 50건은 90초를 줘도 안 오는 상태를 봤다. 어느 크기부터 막히는지
+    짐작으로 정하지 않으려고, 한 번씩만 재 보고 표로 남긴다.
+    """
+    log("쪽 크기별로 한 번씩 재 본다 (재시도 없음, 60초 제한)")
+    results = []
+    for size in sizes:
+        t0 = time.time()
+        xml = fetch("%s.xml?OC=%s&diff=0&pageSize=%d&pageIndex=1"
+                    % (REST, urllib.parse.quote(oc()), size),
+                    tries=1, timeout=60)
+        took = time.time() - t0
+        got = len([r for r in records(xml) if r.get("ogLmPpSeq")]) if xml else 0
+        results.append((size, took, got, xml is not None))
+        log("  pageSize=%-3d  %6.1f초  %s"
+            % (size, took, ("%d건" % got) if xml else "실패"))
+        time.sleep(DELAY_SEC)
+    ok = [r for r in results if r[3]]
+    if not ok:
+        log("전부 실패 — 크기 문제가 아니라 서버가 통째로 안 받는 상태다.")
+        return 1
+    log("가장 큰 성공 크기: pageSize=%d (%.1f초)" % (ok[-1][0], ok[-1][1]))
+    return 0
+
+
 def main():
+    if "--probe" in sys.argv:
+        if not oc():
+            log("LAWMAKING_OC 가 없다. 종료.")
+            return 1
+        return probe_page_sizes()
     if "--ping" in sys.argv:
         if not oc():
             log("LAWMAKING_OC 가 없다. 종료.")
