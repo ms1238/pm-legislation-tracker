@@ -263,6 +263,47 @@ def tidy_name(name):
     return re.sub(r"^\s*\[[^\]]{1,6}\]\s*", "", name or "").strip()
 
 
+def attachment_text(row):
+    """예고에 붙은 법령안 파일에서 글자를 꺼낸다.
+
+    왜 필요한가: 킥보드의 범칙금·과태료·벌점은 조문이 아니라 별표에서 바뀌는 일이
+    많다(87924가 별표 28이었다). 별표는 lmPpCts에 안 들어오고 첨부 파일에만 있다.
+    첨부를 못 읽으면 "관심 법 개정인데 PM 얘긴지 모르겠다"는 건이 계속 쌓인다.
+
+    .hwpx 는 사실상 ZIP 안의 XML이라 표준 모듈만으로 글자를 꺼낼 수 있다.
+    구형 .hwp(바이너리)나 .pdf 는 못 읽는다 — 그때는 None을 돌려주어
+    '안 읽힘'과 '읽었는데 없음'을 구분할 수 있게 한다.
+    """
+    link = (row.get("FileDownLink") or "").strip()
+    name = (row.get("FileName") or "").strip()
+    if not link:
+        return None
+    if not name.lower().endswith(".hwpx"):
+        return None
+    if link.startswith("/"):
+        link = "https://www.lawmaking.go.kr" + link
+    try:
+        req = urllib.request.Request(link, headers=UA)
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            blob = resp.read()
+    except Exception as e:
+        log("첨부 조회 실패 %s — %r" % (name, e))
+        return None
+    try:
+        import io, zipfile
+        with zipfile.ZipFile(io.BytesIO(blob)) as z:
+            parts = []
+            for entry in z.namelist():
+                if entry.endswith(".xml") and ("section" in entry.lower() or "Contents" in entry):
+                    parts.append(z.read(entry).decode("utf-8", "replace"))
+    except Exception as e:
+        log("첨부가 hwpx로 안 열린다 %s — %r" % (name, e))
+        return None
+    if not parts:
+        return None
+    return clean(" ".join(parts))
+
+
 def hits_in(text):
     return [k for k in KEYWORDS if k in (text or "")]
 
@@ -407,7 +448,7 @@ def build_blocks(found):
     '안전모'라는 본문 표현으로 잡혔고, 같은 실행에서 법 이름만으로 올라온 두 건은
     PM과 무관했다. 그래도 버리지는 않는다 — 별표에만 실린 건을 놓치는 통로다.
     """
-    primary = [f for f in found if f.get("tier") == "body"]
+    primary = [f for f in found if f.get("tier") in ("body", "attach")]
     penalty = [f for f in found if f.get("tier") == "penalty"]
     secondary = [f for f in found if f.get("tier") == "law"]
 
@@ -480,6 +521,21 @@ def inspect(seq):
         i = cts.find(probe)
         log("  '%s' %s" % (probe, ("%d번째 글자 — …%s…" % (i, cts[max(0, i-60):i+80])) if i >= 0 else "없음"))
     log("본문 앞 600자: %s" % cts[:600])
+
+    # 목록 항목이 있어야 첨부 주소를 안다. 한 건만 볼 때는 목록에서 그 번호를 찾는다.
+    rows = fetch_open_notices() or []
+    row = next((r for r in rows if r.get("ogLmPpSeq") == str(seq)), None)
+    if not row:
+        log("진행중 목록에 없어 첨부는 확인하지 못했다")
+        return 0
+    log("첨부: %s" % (row.get("FileName") or "(없음)"))
+    log("첨부 주소: %s" % (row.get("FileDownLink") or "(없음)"))
+    att = attachment_text(row)
+    if att is None:
+        log("첨부를 못 읽었다(hwpx가 아니거나 내려받기 실패)")
+    else:
+        log("첨부 글자 %d자, 키워드 적중: %s" % (len(att), ", ".join(hits_in(att)) or "없음"))
+        log("첨부 앞 400자: %s" % att[:400])
     return 0
 
 
@@ -532,6 +588,15 @@ def main():
         penalties = [t for t in PENALTY_TERMS if t in cts] if laws else []
         if (not hits and not laws) or seq in alerted:
             continue
+
+        # 본문에 단서가 없으면 첨부(별표)를 열어 본다. 읽히면 거기서 판정하고,
+        # 못 읽히면 그때만 '모르겠다'로 남긴다.
+        att_hits, att_text = [], None
+        if not hits:
+            att_text = attachment_text(row)
+            time.sleep(DELAY_SEC)
+            if att_text:
+                att_hits = hits_in(att_text)
         row["hits"] = hits
         row["laws"] = laws
         row["penalties"] = penalties
@@ -539,6 +604,15 @@ def main():
             row["tier"] = "body"
             row["excerpt"] = excerpt(cts, hits[0])
             why = ", ".join(hits)
+        elif att_hits:
+            row["tier"] = "attach"
+            row["hits"] = att_hits
+            row["excerpt"] = excerpt(att_text, att_hits[0])
+            why = "첨부(별표) " + ", ".join(att_hits)
+        elif att_text is not None:
+            # 첨부까지 읽었는데 관심어가 없다. PM 얘기가 아니라고 볼 근거가 있으니 버린다.
+            log("제외 %s | %s | 본문·첨부 모두 관심어 없음" % (seq, name))
+            continue
         elif penalties:
             row["tier"] = "penalty"
             row["excerpt"] = excerpt(cts, penalties[0])
