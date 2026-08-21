@@ -1732,12 +1732,23 @@ function pmSwitchView(view){
   fetch('automation/notices.json', {cache:'no-store'})
     .then(function(r){ if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(function(data){
-      var rows = (data && data.notices) || [];
+      var all = (data && data.notices) || [];
+      // 감시는 키워드를 넓게 걸어 두었기 때문에 걸린 것이 전부 볼 값어치가 있진 않다.
+      // 매일 알림으로 받아 확인한 뒤 followup 을 켠 건만 이 탭에 올린다.
+      var rows = all.filter(function(n){ return n.followup; });
+      var pending = all.length - rows.length;
       document.getElementById('notice-count').textContent = rows.length;
       var stamp = document.getElementById('notice-updated');
-      if (stamp && data.updated) stamp.textContent = '마지막 확인: ' + data.updated + ' (매일 자동 갱신)';
+      if (stamp && data.updated){
+        stamp.textContent = '마지막 확인: ' + data.updated + ' · 매일 자동 갱신'
+          + (pending ? ' · 검토 대기 ' + pending + '건' : '');
+      }
       if (!rows.length){
-        list.innerHTML = '<div class="bill-card2"><p class="bc-summary">아직 걸린 입법예고가 없습니다.</p></div>';
+        list.innerHTML = '<div class="bill-card2"><p class="bc-summary">' +
+          (pending
+            ? '검토 대기 ' + pending + '건이 있습니다. 알림에서 확인한 뒤 올릴 건을 정해 주세요.'
+            : '팔로업 중인 입법예고가 없습니다.') +
+          '</p></div>';
         return;
       }
 

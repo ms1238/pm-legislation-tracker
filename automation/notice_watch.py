@@ -75,22 +75,20 @@ MAX_PAGES = 10
 
 # 이 트래커가 찾는 말.
 #
-# '자전거' 한 단어는 뺐다. 그것만으로도 자전거 관련 개정이 전부 걸려서, 정작 PM 건이
-# 묻혔다. 대신 PM과 실제로 이어지는 자전거 표현만 남긴다.
-#   - '자전거등'은 도로교통법의 정의어로, 자전거와 개인형 이동장치를 묶는다.
-#     이 말을 쓰는 조항(주차·통행 등)을 고치면 PM에 그대로 걸린다.
-#   - '전기자전거'와 '공유 자전거'는 각각 제품군과 경쟁 영역이라 따로 본다.
+# '자전거'는 넓게 둔다. 도로교통법이 "자전거등"이라는 정의어로 자전거와 개인형
+# 이동장치를 묶고 있어 그 조항을 고치면 PM에 그대로 걸리고, 공유 자전거는 경쟁
+# 영역이라 그쪽 규제도 봐야 한다. 부분일치라 '자전거등'·'전기자전거'·'공유자전거'는
+# 이 한 줄로 함께 걸린다.
 #
-# 부분일치라 '자전거등의'·'공유자전거를' 같은 활용형은 이 항목들로 걸린다.
+# 넓게 걸어서 생기는 오탐은 키워드를 좁혀서가 아니라 사람이 걸러서 처리한다 —
+# 감지는 자동이고, 페이지에 올릴지는 확인 후에 정한다(publish_notices 참고).
 KEYWORDS = [
     "개인형 이동장치", "개인형이동장치", "개인형 이동수단", "개인형이동수단",
     "전동킥보드", "킥보드", "전동이륜평행차", "전동기의 동력만으로",
-    "자전거등", "전기자전거", "공유 자전거", "공유자전거",
-    "퍼스널 모빌리티", "퍼스널모빌리티",
+    "자전거", "전기자전거", "퍼스널 모빌리티", "퍼스널모빌리티",
     "대여사업", "대여업", "공유 모빌리티", "공유모빌리티",
     # 법령문에서 헬멧은 '안전모'·'인명보호 장구'로 쓴다. 87924(도로교통법 시행규칙,
     # 안전모 미착용 벌점)가 '헬멧'으로는 한 글자도 안 걸렸다.
-    # 법령문에서 헬멧은 '안전모'·'인명보호 장구'로 쓴다.
     "안전모", "인명보호",
 ]
 
@@ -395,10 +393,17 @@ def save_state(state):
 
 
 def publish_notices(found):
-    """적중한 정부 입법예고를 페이지가 읽을 파일에 쌓는다.
+    """적중한 정부 입법예고를 기록한다. 페이지에 올릴지는 사람이 정한다.
 
-    슬랙은 그때그때 알리고 지나가지만, 페이지는 "지금까지 뭐가 있었나"를 보여줘야
-    한다. 그래서 새로 걸린 건을 기존 목록에 합쳐 두고, 예고일 최신순으로 적는다.
+    키워드는 넓게 걸어 놓았기 때문에 걸린 것이 전부 PM 얘기는 아니다. 실제로 지금
+    열려 있는 4건 중 PM에 직접 걸리는 건 도로교통법 시행규칙 한 건뿐이었다.
+    그래서 이 파일은 두 가지를 함께 담는다.
+
+      followup=false  감지는 됐고 확인 대기 중. 페이지에는 안 나온다.
+      followup=true   확인 결과 따라갈 가치가 있다. 페이지 탭에 나온다.
+
+    새로 걸린 건은 항상 false로 들어가고, 이미 true로 바꿔 둔 건은 건드리지 않는다.
+    올릴 건은 automation/notices.json 에서 그 건의 followup 을 true 로 바꾸면 된다.
     """
     try:
         with open(NOTICES_PATH, encoding="utf-8") as f:
@@ -424,12 +429,16 @@ def publish_notices(found):
             "excerpt": f["excerpt"],
             "link": DETAIL_PAGE % no,
             "found": by_no.get(no, {}).get("found", today),
+            # 이미 사람이 판단해 둔 건이면 그 판단을 유지한다.
+            "followup": bool(by_no.get(no, {}).get("followup", False)),
         }
     notices = sorted(by_no.values(), key=lambda n: n.get("st", ""), reverse=True)
     with open(NOTICES_PATH, "w", encoding="utf-8") as f:
         json.dump({"updated": now_kst().strftime("%Y-%m-%d %H:%M"), "notices": notices},
                   f, ensure_ascii=False, indent=1)
-    log("페이지용 목록 갱신: 총 %d건 (%s)" % (len(notices), NOTICES_PATH))
+    shown = sum(1 for n in notices if n.get("followup"))
+    log("기록 갱신: 총 %d건, 그중 페이지 게시 %d건, 확인 대기 %d건"
+        % (len(notices), shown, len(notices) - shown))
 
 
 def slack_send(webhook, text, blocks):
@@ -455,7 +464,8 @@ def build_blocks(found):
     blocks = []
     if primary:
         blocks.append({"type": "section", "text": {"type": "mrkdwn",
-                       "text": "*🛴 입법예고 알림 — 본문 적중 %d건*" % len(primary)}})
+                       "text": "*🛴 새 입법예고 — 본문 적중 %d건*\n"
+                               "_확인하신 뒤 페이지에 올릴 건만 골라 주세요._" % len(primary)}})
     for f in primary:
         why = "본문 `%s`" % "`, `".join(f["hits"])
         txt = ("*<%s|%s>*\n%s · %s · 공고 %s\n예고기간 %s ~ %s\n걸린 이유: %s\n> %s"
