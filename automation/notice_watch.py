@@ -315,8 +315,17 @@ def attachment_text(row):
     return clean(" ".join(parts))
 
 
+# 이 말들은 혼자서는 우리 얘기라는 근거가 못 된다. 건설기계 대여사업, 렌터카
+# 대여업이 전부 여기 걸린다(88028 건설기계관리법 시행규칙이 그랬다). 위의 탈것
+# 관련어가 같이 나올 때만 의미가 있으므로, 단독으로는 적중으로 치지 않는다.
+WEAK_KEYWORDS = {"대여사업", "대여업"}
+
+
 def hits_in(text):
-    return [k for k in KEYWORDS if k in (text or "")]
+    hits = [k for k in KEYWORDS if k in (text or "")]
+    if all(k in WEAK_KEYWORDS for k in hits):
+        return []
+    return hits
 
 
 def excerpt(text, keyword, width=140):
