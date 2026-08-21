@@ -69,6 +69,14 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; pm-legislation-tracker/1.0)"}
 TIMEOUT = 25
 DELAY_SEC = 0.4
 
+# .go.kr 이 통째로 응답을 멈추면 한 건당 재시도까지 80초를 태운다. 200건이면
+# 네 시간이다. 연달아 이만큼 실패하면 서버 쪽 문제로 보고 그만둔다 — 읽은
+# 만큼은 상태에 남고, 못 읽은 건은 다음 실행이 다시 본다.
+FAIL_STREAK_LIMIT = 8
+# 진행 상황을 이 간격으로 남긴다. 없으면 로그가 몇십 분간 조용해서 살아
+# 있는지 죽었는지 구분이 안 된다.
+PROGRESS_EVERY = 20
+
 # 목록은 기본 20건만 준다. pageSize·pageIndex는 문서에 없지만 실제로 먹는다.
 PAGE_SIZE = 100
 MAX_PAGES = 10
@@ -567,7 +575,10 @@ def main():
         return 1
 
     state = load_state()
-    first_run = not state.get("seen")
+    # 첫 훑기를 끝냈는지로 판단한다. seen 이 비었는지로 보면, 중간에 끊기거나
+    # --limit 으로 잘린 실행 다음에 남은 수백 건이 한꺼번에 슬랙으로 쏟아진다.
+    # 플래그가 없는 예전 상태 파일은 종전대로 seen 유무로 본다.
+    first_run = not state.get("sweep_complete", bool(state.get("seen")))
     seen = set(state.get("seen", []))
     alerted = set(state.get("alerted", []))
     log("상태: 본문을 읽어 둔 예고 %d건%s" % (len(seen), " (첫 실행)" if not seen else ""))
@@ -580,17 +591,34 @@ def main():
 
     todo = [r for r in rows if r.get("ogLmPpSeq") not in seen]
     log("아직 본문을 안 읽은 예고 %d건" % len(todo))
-    if limit and len(todo) > limit:
+    truncated = bool(limit and len(todo) > limit)
+    if truncated:
         log("이번엔 %d건만 읽는다(나머지는 다음 실행에서 본다)" % limit)
         todo = todo[:limit]
 
     found = []
-    for row in todo:
+    started = time.time()
+    fail_streak = 0
+    aborted = False
+    for done, row in enumerate(todo, 1):
         seq = row.get("ogLmPpSeq", "")
         cts = fetch_body(row)
         time.sleep(DELAY_SEC)
+        if done % PROGRESS_EVERY == 0 or done == len(todo):
+            log("  %d/%d 읽음 (적중 %d건, 실패 %d건, %.0f초 경과)"
+                % (done, len(todo), len(found), API_FAILURES, time.time() - started))
         if cts is None:
-            continue          # 못 읽었다 — seen 에 넣지 않아 다음 실행이 다시 본다
+            # 못 읽었다 — seen 에 넣지 않아 다음 실행이 다시 본다
+            fail_streak += 1
+            if fail_streak >= FAIL_STREAK_LIMIT:
+                log("연속 %d건 실패 — 서버가 응답하지 않는다고 보고 중단한다."
+                    % fail_streak)
+                log("여기까지 읽은 %d건은 저장한다. 나머지는 다음 실행이 이어서 본다."
+                    % (done - 1))
+                aborted = True
+                break
+            continue
+        fail_streak = 0
         seen.add(seq)
         name = row.get("lsNm") or ""
         hits = hits_in(name + " " + cts)
@@ -711,6 +739,11 @@ def main():
 
     if found:
         publish_notices(found)
+
+    if not aborted and not truncated:
+        state["sweep_complete"] = True
+    elif first_run:
+        log("첫 훑기가 끝나지 않았다 — 다음 실행도 조용히 마저 읽는다.")
 
     state["seen"] = sorted(seen, key=lambda s: -int(s))[:4000]
     state["alerted"] = sorted(alerted, key=lambda s: -int(s))[:500]
