@@ -40,6 +40,9 @@ permissions:
 jobs:
   watch:
     runs-on: ubuntu-latest
+    # 상대 서버가 응답을 멈추면 재시도만 하다 몇 시간을 태운다. 정상 실행은
+    # 첫 훑기가 10분대, 그 뒤로는 1분 안이라 40분이면 넉넉하다.
+    timeout-minutes: 40
     steps:
       - name: 저장소 체크아웃
         uses: actions/checkout@v4
