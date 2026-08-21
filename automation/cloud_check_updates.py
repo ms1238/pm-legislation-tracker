@@ -57,17 +57,43 @@ API_FAILURES = 0
 # 이 비율 이상 실패하면 그 실행은 신뢰할 수 없다고 보고 상태를 갱신하지 않는다.
 FAILURE_ABORT_RATIO = 0.5
 
+# 러너에서 국회 API 연결이 통째로 막히는 날이 있다(2026-08-18 저녁, 2026-08-21 오전).
+# 그때도 전 구간을 끝까지 도느라 호출 하나에 15초씩 163번을 버려서 실행이 41분 38초
+# 걸렸다 — 결과는 어차피 "상태 갱신 안 함"으로 같다. 한 건도 성공하지 못한 채
+# 이만큼 실패했으면 연결이 문제인 게 분명하니 그 자리에서 끝낸다.
+FAILFAST_AFTER = 12
+API_SUCCESSES = 0
+
 
 def api_get(url):
-    global API_ATTEMPTS, API_FAILURES
+    global API_ATTEMPTS, API_FAILURES, API_SUCCESSES
     API_ATTEMPTS += 1
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            data = json.loads(resp.read().decode("utf-8"))
     except Exception:
         API_FAILURES += 1
+        if API_SUCCESSES == 0 and API_FAILURES >= FAILFAST_AFTER:
+            abort_no_connection()
         raise
+    API_SUCCESSES += 1
+    return data
+
+
+def abort_no_connection():
+    """연결 자체가 안 되는 실행을 즉시 끝낸다.
+
+    호출부가 예외를 전부 삼키므로(그래야 한 건 실패가 전체를 멈추지 않는다) 보통
+    예외로는 여기서 빠져나갈 수 없다. SystemExit은 Exception이 아니라서
+    그 handler들을 그대로 통과한다.
+    """
+    log("!!! 국회 API 조회가 %d회 연속 실패 — 한 건도 성공하지 못했습니다." % API_FAILURES)
+    log("!!! 연결 문제로 보고 즉시 종료합니다(상태 파일은 갱신하지 않습니다).")
+    log("!!! (슬랙 알림은 보내지 않습니다. Actions 실행이 실패로 표시됩니다.)")
+    print("API_FAILED=true")
+    print("HAS_CHANGES=false")
+    raise SystemExit(1)
 
 
 def api_health():
