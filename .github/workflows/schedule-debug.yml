@@ -4,6 +4,15 @@ name: 국회 일정 조회 진단
 
 on:
   workflow_dispatch:
+    inputs:
+      oc:
+        description: "입법예고 감시를 함께 시험할 때 쓸 OC(비우면 일정 진단만 한다)"
+        required: false
+        type: string
+      inspect:
+        description: "한 건만 열어볼 입법예고 번호(ogLmPpSeq). 비우면 전체 감시를 시험한다."
+        required: false
+        type: string
 
 jobs:
   debug:
@@ -18,6 +27,33 @@ jobs:
           python-version: "3.11"
 
       - name: 일정 조회 진단
+        if: ${{ inputs.oc == '' }}
         env:
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
         run: python automation/schedule_debug.py
+
+      # OC를 넣고 실행하면 입법예고 감시를 시험 실행한다. 슬랙도 상태 파일도 건드리지
+      # 않으므로 판정 결과만 로그로 확인할 수 있다.
+      - name: OC 마스킹
+        if: ${{ inputs.oc != '' }}
+        id: oc
+        env:
+          INPUT_OC: ${{ inputs.oc }}
+        run: |
+          # 이 저장소는 퍼블릭이라 실행 로그도 공개된다. 입력값은 자동 마스킹
+          # 대상이 아니므로 여기서 직접 가린다.
+          echo "::add-mask::$INPUT_OC"
+          echo "oc=$INPUT_OC" >> "$GITHUB_OUTPUT"
+
+      - name: 입법예고 한 건 열어보기
+        if: ${{ inputs.oc != '' && inputs.inspect != '' }}
+        env:
+          LAWMAKING_OC: ${{ steps.oc.outputs.oc }}
+        run: python automation/notice_watch.py --inspect ${{ inputs.inspect }}
+
+      - name: 입법예고 감시 시험 실행(슬랙·상태파일 없이)
+        if: ${{ inputs.oc != '' && inputs.inspect == '' }}
+        env:
+          LAWMAKING_OC: ${{ steps.oc.outputs.oc }}
+          ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
+        run: python automation/notice_watch.py --dry-run
