@@ -67,6 +67,10 @@ DETAIL_PAGE = "https://opinion.lawmaking.go.kr/gcom/ogLmPp/%s"
 
 UA = {"User-Agent": "Mozilla/5.0 (compatible; pm-legislation-tracker/1.0)"}
 TIMEOUT = 25
+# 목록 요청은 본문 한 건보다 훨씬 무겁다. 100건짜리는 잘 돌 때도 8초가 걸렸고,
+# 서버가 조금만 느려지면 25초를 넘겨 타임아웃이 났다(실측 3회 중 2회). 목록에만
+# 넉넉한 시간을 준다.
+LIST_TIMEOUT = 90
 # 0.4초는 초당 2.5건이다. 200건을 그 속도로 밀면 상대가 조여도 이상하지 않다.
 # 하루 한 번 도는 작업이라 급할 이유가 없어 넉넉히 벌린다.
 DELAY_SEC = 1.5
@@ -80,8 +84,10 @@ FAIL_STREAK_LIMIT = 8
 PROGRESS_EVERY = 20
 
 # 목록은 기본 20건만 준다. pageSize·pageIndex는 문서에 없지만 실제로 먹는다.
-PAGE_SIZE = 100
-MAX_PAGES = 10
+# 한 쪽을 작게 끊는다. 100건씩 달라고 하면 응답 하나가 무거워져 타임아웃 위험이
+# 커진다. 쪽수가 늘어도 하루 한 번 도는 작업이라 상관없다.
+PAGE_SIZE = 50
+MAX_PAGES = 20
 
 # 이 트래커가 찾는 말.
 #
@@ -160,14 +166,14 @@ def redact(text):
     return text.replace(oc(), "***OC***") if (oc() and text) else text
 
 
-def fetch(url, tries=3):
+def fetch(url, tries=3, timeout=None):
     """(본문 또는 None). 러너에서 .go.kr 연결은 자주 끊겨서 재시도한다."""
     global API_ATTEMPTS, API_FAILURES
     API_ATTEMPTS += 1
     req = urllib.request.Request(url, headers=UA)
     for attempt in range(1, tries + 1):
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=timeout or TIMEOUT) as resp:
                 return resp.read().decode("utf-8", "replace")
         except Exception as e:
             if attempt == tries:
@@ -234,8 +240,13 @@ def fetch_open_notices():
     """
     rows, seen_ids = [], set()
     for page in range(1, MAX_PAGES + 1):
+        t0 = time.time()
         xml = fetch("%s.xml?OC=%s&diff=0&pageSize=%d&pageIndex=%d"
-                    % (REST, urllib.parse.quote(oc()), PAGE_SIZE, page))
+                    % (REST, urllib.parse.quote(oc()), PAGE_SIZE, page),
+                    timeout=LIST_TIMEOUT)
+        # 목록이 이 작업에서 가장 잘 실패하는 지점이다. 쪽마다 얼마나 걸렸는지
+        # 남겨 둬야 다음에 또 느려졌을 때 짐작이 아니라 기록으로 볼 수 있다.
+        log("목록 %d쪽: %.1f초%s" % (page, time.time() - t0, "" if xml else " — 실패"))
         if xml is None:
             return None if page == 1 else rows
         if "<retMsg>401</retMsg>" in xml:
