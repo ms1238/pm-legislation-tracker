@@ -90,8 +90,15 @@ KEYWORDS = [
     "대여사업", "대여업", "공유 모빌리티", "공유모빌리티",
     # 법령문에서 헬멧은 '안전모'·'인명보호 장구'로 쓴다. 87924(도로교통법 시행규칙,
     # 안전모 미착용 벌점)가 '헬멧'으로는 한 글자도 안 걸렸다.
-    "안전모", "인명보호", "승차용 안전모",
+    # 법령문에서 헬멧은 '안전모'·'인명보호 장구'로 쓴다.
+    "안전모", "인명보호",
 ]
+
+# 제재 관련어. 이것만으로는 아무 의미가 없다 — 도로교통법 개정이면 거의 다 나온다.
+# 지정 법 개정이면서 이 말이 나올 때만 본다. 킥보드의 범칙금·과태료·벌점은 조문이
+# 아니라 별표에서 바뀌는 일이 많고(87924가 별표 28이었다), 별표는 API로 안 온다.
+# 그래서 "제재 기준을 건드리는 지정 법 개정"은 PM 적용 여부를 사람이 확인해야 한다.
+PENALTY_TERMS = ["범칙금", "과태료", "벌점", "과징금", "처분기준", "부과기준", "단속"]
 
 # 본문에 관심어가 없어도 이 법의 개정이면 사람이 봐야 한다.
 # 87924가 그 예다 — 본문은 "기초질서 벌점 정비"라고만 하고, PM에 어떻게 걸리는지는
@@ -371,7 +378,8 @@ def publish_notices(found):
             "ed": f.get("edYd", ""),
             "hits": f.get("hits") or [],
             "laws": f.get("laws") or [],
-            "why": "body" if f.get("hits") else "law",
+            "why": f.get("tier", "law"),
+            "penalties": f.get("penalties") or [],
             "excerpt": f["excerpt"],
             "link": DETAIL_PAGE % no,
             "found": by_no.get(no, {}).get("found", today),
@@ -399,8 +407,9 @@ def build_blocks(found):
     '안전모'라는 본문 표현으로 잡혔고, 같은 실행에서 법 이름만으로 올라온 두 건은
     PM과 무관했다. 그래도 버리지는 않는다 — 별표에만 실린 건을 놓치는 통로다.
     """
-    primary = [f for f in found if f.get("hits")]
-    secondary = [f for f in found if not f.get("hits")]
+    primary = [f for f in found if f.get("tier") == "body"]
+    penalty = [f for f in found if f.get("tier") == "penalty"]
+    secondary = [f for f in found if f.get("tier") == "law"]
 
     blocks = []
     if primary:
@@ -413,6 +422,17 @@ def build_blocks(found):
                   f.get("asndOfiNm", ""), f.get("lsClsNm", ""), f.get("pntcNo", ""),
                   f.get("stYd", ""), f.get("edYd", ""), why, f.get("excerpt", "")))
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": txt}})
+
+    if penalty:
+        lines = ["*⚠️ 제재 기준 변경 — PM 적용 여부 확인 필요 (%d건)*" % len(penalty),
+                 "_범칙금·과태료·벌점은 별표에서 바뀌는 일이 많고 별표는 API로 안 옵니다._"]
+        for f in penalty:
+            lines.append("· <%s|%s> — %s · %s · ~%s"
+                         % (DETAIL_PAGE % f["ogLmPpSeq"], tidy_name(f.get("lsNm")),
+                            f.get("asndOfiNm", ""), ", ".join(f.get("penalties") or []),
+                            f.get("edYd", "")))
+        blocks.append({"type": "section",
+                       "text": {"type": "mrkdwn", "text": "\n".join(lines)}})
 
     if secondary:
         lines = ["*참고 — 관심 법 개정이지만 본문엔 관심어가 없음 (%d건)*" % len(secondary),
@@ -509,14 +529,26 @@ def main():
         name = row.get("lsNm") or ""
         hits = hits_in(name + " " + cts)
         laws = [w for w in WATCH_LAWS if w in name]
+        penalties = [t for t in PENALTY_TERMS if t in cts] if laws else []
         if (not hits and not laws) or seq in alerted:
             continue
         row["hits"] = hits
         row["laws"] = laws
-        row["excerpt"] = excerpt(cts, hits[0]) if hits else (cts[:180] + "…" if cts else "")
+        row["penalties"] = penalties
+        if hits:
+            row["tier"] = "body"
+            row["excerpt"] = excerpt(cts, hits[0])
+            why = ", ".join(hits)
+        elif penalties:
+            row["tier"] = "penalty"
+            row["excerpt"] = excerpt(cts, penalties[0])
+            why = "지정 법 %s + 제재 %s" % (", ".join(laws), ", ".join(penalties))
+        else:
+            row["tier"] = "law"
+            row["excerpt"] = (cts[:180] + "…") if cts else ""
+            why = "지정 법 " + ", ".join(laws)
         found.append(row)
-        log("적중 %s | %s | %s"
-            % (seq, name, ", ".join(hits) if hits else "지정 법 " + ", ".join(laws)))
+        log("적중 %s | %s | %s" % (seq, name, why))
 
     # --- 국회 입법예고 ---
     assembly_alerted = set(state.get("assembly_alerted", []))
