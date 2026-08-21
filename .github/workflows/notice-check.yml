@@ -54,6 +54,9 @@ jobs:
 
       - name: 입법예고 감시
         env:
+          # 버퍼링 때문에 로그가 통째로 사라지는 일을 막는다. 스크립트도 flush 하지만
+          # 트레이스백처럼 스크립트가 손대지 않는 출력까지 덮으려면 이쪽이 필요하다.
+          PYTHONUNBUFFERED: "1"
           LAWMAKING_OC: ${{ secrets.LAWMAKING_OC }}
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
