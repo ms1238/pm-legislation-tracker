@@ -67,7 +67,9 @@ DETAIL_PAGE = "https://opinion.lawmaking.go.kr/gcom/ogLmPp/%s"
 
 UA = {"User-Agent": "Mozilla/5.0 (compatible; pm-legislation-tracker/1.0)"}
 TIMEOUT = 25
-DELAY_SEC = 0.4
+# 0.4초는 초당 2.5건이다. 200건을 그 속도로 밀면 상대가 조여도 이상하지 않다.
+# 하루 한 번 도는 작업이라 급할 이유가 없어 넉넉히 벌린다.
+DELAY_SEC = 1.5
 
 # .go.kr 이 통째로 응답을 멈추면 한 건당 재시도까지 80초를 태운다. 200건이면
 # 네 시간이다. 연달아 이만큼 실패하면 서버 쪽 문제로 보고 그만둔다 — 읽은
@@ -560,7 +562,38 @@ def inspect(seq):
     return 0
 
 
+def ping():
+    """목록을 한 건만 달라고 해 본다. 서버가 살아 있는지만 보는 용도다.
+
+    본 실행은 실패 한 번에 82초(25초 타임아웃 세 번 + 백오프)를 태운다. 상대가
+    응답하는지부터 확인하고 싶을 때 그만큼 기다릴 이유가 없어, 재시도 없이
+    한 번만 물어본다.
+    """
+    url = ("%s.xml?OC=%s&diff=0&pageSize=1&pageIndex=1"
+           % (REST, urllib.parse.quote(oc())))
+    log("한 건만 요청해 본다: %s" % redact(url))
+    started = time.time()
+    xml = fetch(url, tries=1)
+    took = time.time() - started
+    if xml is None:
+        log("응답 없음 (%.0f초). 서버가 러너에서 닿지 않는다." % took)
+        return 1
+    if "<retMsg>401</retMsg>" in xml:
+        log("응답은 왔는데 인증 실패(401) — OC 값을 확인해야 한다 (%.0f초)" % took)
+        return 1
+    got = [r for r in records(xml) if r.get("ogLmPpSeq")]
+    log("응답 정상 (%.1f초, %d건). 서버는 살아 있다." % (took, len(got)))
+    for r in got:
+        log("  예시: %s | %s" % (r.get("ogLmPpSeq"), r.get("lsNm") or "(제명 없음)"))
+    return 0
+
+
 def main():
+    if "--ping" in sys.argv:
+        if not oc():
+            log("LAWMAKING_OC 가 없다. 종료.")
+            return 1
+        return ping()
     if "--inspect" in sys.argv:
         if not oc():
             log("LAWMAKING_OC 가 없다. 종료.")

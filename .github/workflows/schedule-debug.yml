@@ -1,22 +1,33 @@
-# 국회 일정 조회 진단용 — 손으로만 실행한다.
+# 진단용 — 손으로만 실행한다.
 # 상태 파일을 쓰지 않고 커밋도 슬랙 알림도 하지 않는다. 읽고 출력만 한다.
-name: 국회 일정 조회 진단
+name: 진단 (국회 일정 · 입법예고)
 
 on:
   workflow_dispatch:
     inputs:
-      oc:
-        description: "입법예고 감시를 함께 시험할 때 쓸 OC(비우면 일정 진단만 한다)"
+      mode:
+        description: "무엇을 볼지"
+        required: true
+        default: ping
+        type: choice
+        options:
+          - ping          # 입법예고 서버가 러너에서 닿는지 한 건만 물어본다
+          - inspect       # 입법예고 한 건을 열어 본문·첨부 판정을 본다
+          - sweep         # 감시를 통째로 시험 실행한다(슬랙·상태파일 없이)
+          - schedule      # 국회 일정 조회 진단
+      seq:
+        description: "inspect 일 때 열어볼 입법예고 번호(ogLmPpSeq)"
         required: false
         type: string
-      inspect:
-        description: "한 건만 열어볼 입법예고 번호(ogLmPpSeq). 비우면 전체 감시를 시험한다."
+      limit:
+        description: "sweep 일 때 읽을 최대 건수(비우면 제한 없음)"
         required: false
         type: string
 
 jobs:
   debug:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: 저장소 체크아웃
         uses: actions/checkout@v4
@@ -26,34 +37,36 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: 일정 조회 진단
-        if: ${{ inputs.oc == '' }}
+      - name: 국회 일정 조회 진단
+        if: ${{ inputs.mode == 'schedule' }}
         env:
+          PYTHONUNBUFFERED: "1"
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
         run: python automation/schedule_debug.py
 
-      # OC를 넣고 실행하면 입법예고 감시를 시험 실행한다. 슬랙도 상태 파일도 건드리지
-      # 않으므로 판정 결과만 로그로 확인할 수 있다.
-      - name: OC 마스킹
-        if: ${{ inputs.oc != '' }}
-        id: oc
+      # 아래 셋은 저장소 시크릿의 OC를 쓴다. 입력으로 받으면 실행 기록에 값이
+      # 그대로 남아서, 시크릿이 있는 지금은 그럴 이유가 없다.
+      - name: 입법예고 서버 확인(한 건만)
+        if: ${{ inputs.mode == 'ping' }}
         env:
-          INPUT_OC: ${{ inputs.oc }}
-        run: |
-          # 이 저장소는 퍼블릭이라 실행 로그도 공개된다. 입력값은 자동 마스킹
-          # 대상이 아니므로 여기서 직접 가린다.
-          echo "::add-mask::$INPUT_OC"
-          echo "oc=$INPUT_OC" >> "$GITHUB_OUTPUT"
+          PYTHONUNBUFFERED: "1"
+          LAWMAKING_OC: ${{ secrets.LAWMAKING_OC }}
+        run: python automation/notice_watch.py --ping
 
       - name: 입법예고 한 건 열어보기
-        if: ${{ inputs.oc != '' && inputs.inspect != '' }}
+        if: ${{ inputs.mode == 'inspect' }}
         env:
-          LAWMAKING_OC: ${{ steps.oc.outputs.oc }}
-        run: python automation/notice_watch.py --inspect ${{ inputs.inspect }}
+          PYTHONUNBUFFERED: "1"
+          LAWMAKING_OC: ${{ secrets.LAWMAKING_OC }}
+        run: python automation/notice_watch.py --inspect "${{ inputs.seq }}"
 
-      - name: 입법예고 감시 시험 실행(슬랙·상태파일 없이)
-        if: ${{ inputs.oc != '' && inputs.inspect == '' }}
+      - name: 감시 시험 실행(슬랙·상태파일 없이)
+        if: ${{ inputs.mode == 'sweep' }}
         env:
-          LAWMAKING_OC: ${{ steps.oc.outputs.oc }}
+          PYTHONUNBUFFERED: "1"
+          LAWMAKING_OC: ${{ secrets.LAWMAKING_OC }}
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
-        run: python automation/notice_watch.py --dry-run
+        run: |
+          ARGS="--dry-run"
+          if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
+          python automation/notice_watch.py $ARGS
