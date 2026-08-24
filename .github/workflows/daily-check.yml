@@ -12,12 +12,22 @@ on:
 permissions:
   contents: write      # 상태 파일 커밋·푸시에 필요
 
+# 입법예고 감시(notice-check.yml)와 같은 그룹을 쓴다. 둘 다 master에 푸시하는데,
+# 겹쳐 돌면 나중 쪽이 낡은 기준으로 푸시해 거부당한다(2026-08-24에 그렇게 깨졌다).
+# cancel-in-progress: false — 상태 갱신은 건너뛰면 안 되니 취소가 아니라 대기시킨다.
+concurrency:
+  group: push-to-master
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - name: 저장소 체크아웃
         uses: actions/checkout@v4
+        with:
+          # 얕은 클론이면 푸시 거부 뒤 리베이스할 때 공통 조상을 못 찾을 수 있다.
+          fetch-depth: 0
 
       - name: Python 준비
         uses: actions/setup-python@v5
@@ -40,8 +50,26 @@ jobs:
           git add automation/
           if git diff --cached --quiet; then
             echo "상태 변화 없음 - 커밋 생략"
-          else
-            git commit -m "Routine check: state update only"
-            git push
-            echo "상태 파일 갱신 완료"
+            exit 0
           fi
+          git commit -m "Routine check: state update only"
+
+          # 체크아웃 시점과 푸시 시점 사이에 누가 master에 푸시하면 거부당한다.
+          # 거부되면 원격을 당겨와 이 커밋을 그 위에 다시 얹고 재시도한다.
+          # 여기서 푸시를 못 하면 상태 파일이 러너와 함께 사라지는데, 슬랙 알림은
+          # 이미 나간 뒤라 다음 실행이 같은 건을 또 알리게 된다.
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:master; then
+              echo "상태 파일 갱신 완료"
+              exit 0
+            fi
+            echo "푸시 거부 - 원격을 당겨와 다시 얹는다 ($attempt/5)"
+            if ! git pull --rebase origin master; then
+              git rebase --abort || true
+              echo "리베이스 충돌 - 사람이 봐야 한다. 상태 파일은 저장되지 않았다."
+              exit 1
+            fi
+            sleep $((attempt * 2))
+          done
+          echo "5번 시도했지만 푸시하지 못했다. 상태 파일은 저장되지 않았다."
+          exit 1
