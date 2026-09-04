@@ -233,5 +233,51 @@
         "sess": "제439회국회(정기회)"
       }
     ]
+  },
+  {
+    "checked_at": "2026-09-04T14:20:47.333220+09:00",
+    "changes": [
+      {
+        "type": "member_committee_change",
+        "name": "부승찬",
+        "old_committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 국토교통위원회",
+        "new_committee": "순직 해병 수사 방해 및 사건 은폐 등의 진실규명을 위한 국정조사특별위원회, 국토교통위원회, 대법관(김성수) 임명동의에 관한 인사청문특별위원회"
+      },
+      {
+        "type": "new_schedule",
+        "date": "2026-09-09",
+        "committee": "본회의",
+        "content": "제439-5차(의사일정)",
+        "sess": "제439회국회(정기회)"
+      },
+      {
+        "type": "new_schedule",
+        "date": "2026-09-10",
+        "committee": "본회의",
+        "content": "제439-6차(의사일정)",
+        "sess": "제439회국회(정기회)"
+      },
+      {
+        "type": "new_schedule",
+        "date": "2026-09-11",
+        "committee": "본회의",
+        "content": "제439-7차(의사일정)",
+        "sess": "제439회국회(정기회)"
+      },
+      {
+        "type": "new_schedule",
+        "date": "2026-09-14",
+        "committee": "본회의",
+        "content": "제439-8차(의사일정)",
+        "sess": "제439회국회(정기회)"
+      },
+      {
+        "type": "new_schedule",
+        "date": "2026-09-17",
+        "committee": "본회의",
+        "content": "제439-9차(의사일정)",
+        "sess": "제439회국회(정기회)"
+      }
+    ]
   }
 ]
