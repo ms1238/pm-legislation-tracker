@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
-"""두 가지를 알아본다. 읽기만 하고 아무것도 저장하지 않는다.
+"""401 이 러너 IP를 타는지 보고, 자치법규 입법예고 주소를 찾는다.
 
- 1. 401 이 간헐적인가. 같은 OC로 어떤 날은 되고 어떤 날은 안 된다. 한 번 걸러
-    포기할 일인지, 기다렸다 다시 걸 일인지에 따라 고칠 곳이 다르다.
- 2. 자치법규(지방) 입법예고를 여는 주소가 있는가. 안내 페이지를 못 읽어서
-    이름을 짐작만 했고, 짐작한 여덟 개는 다 404였다.
+한 job 안에서 20초 간격으로 여섯 번을 걸었더니 전부 401이었다. 그런데 어제는
+같은 OC로 성공했다. job 하나는 러너 하나이고 러너 하나는 나가는 IP 하나이므로,
+"어떤 IP는 되고 어떤 IP는 안 된다"면 두 관찰이 같이 설명된다. law.go.kr 이
+IP 등록을 요구하는 것과 같은 부류다.
 
-개발 컨테이너에서는 lawmaking.go.kr 이 막혀 있어 러너에서만 돌아간다.
-답을 얻으면 지울 파일이다.
+그래서 이 파일은 나가는 IP를 먼저 찍는다. 이걸 여러 번 돌려 IP와 결과를
+나란히 놓으면 가설이 맞는지 한눈에 보인다.
+
+읽기만 한다. 러너에서만 돌아간다. 답을 얻으면 지울 파일이다.
 """
 import os
 import re
@@ -18,6 +20,7 @@ import urllib.parse
 import urllib.request
 
 REST = "https://www.lawmaking.go.kr/rest"
+GUIDE = "https://opinion.lawmaking.go.kr/api/apiGuideInfo"
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/124.0 Safari/537.36"}
@@ -27,27 +30,17 @@ def oc():
     return os.environ.get("LAWMAKING_OC", "").strip()
 
 
-def redact(t):
-    return t.replace(oc(), "***OC***") if (oc() and t) else t
-
-
 def log(m):
     print(m, flush=True)
 
 
 def get(url, timeout=30):
-    """(본문, 설명). 실패해도 왜 실패했는지는 남긴다."""
     try:
         req = urllib.request.Request(url, headers=UA)
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read().decode("utf-8", "replace"), "HTTP %d" % r.status
     except urllib.error.HTTPError as e:
-        body = ""
-        try:
-            body = e.read().decode("utf-8", "replace")[:200]
-        except Exception:
-            pass
-        return None, "HTTP %d %s %s" % (e.code, e.reason, body[:120])
+        return None, "HTTP %d %s" % (e.code, e.reason)
     except Exception as e:
         return None, repr(e)
 
@@ -57,116 +50,79 @@ def ret_msg(xml):
     return m.group(1) if m else None
 
 
-# ---------------------------------------------------------------- 1) 401
-def auth_pattern(times=6, gap=20):
-    """같은 요청을 여러 번 건다. 다 401이면 설정, 섞이면 조임이다."""
-    log("=" * 68)
-    log("1) 401 이 계속되는가, 섞이는가 — 같은 요청 %d번" % times)
-    log("=" * 68)
-    if not oc():
-        log("OC 없음 — 건너뛴다")
-        return
+def egress_ip():
+    """이 러너가 바깥으로 나갈 때 쓰는 주소."""
+    for url in ("https://api.ipify.org", "https://checkip.amazonaws.com",
+                "https://ifconfig.me/ip"):
+        body, how = get(url, timeout=15)
+        if body and re.match(r"^\d+\.\d+\.\d+\.\d+\s*$", body):
+            return body.strip()
+    return "(못 알아냄)"
+
+
+def one_call():
     url = ("%s/ogLmPpMod.xml?OC=%s&diff=0&pageSize=1&pageIndex=1"
            % (REST, urllib.parse.quote(oc())))
-    results = []
-    for i in range(1, times + 1):
-        t0 = time.time()
-        body, how = get(url, timeout=40)
-        took = time.time() - t0
-        code = ret_msg(body) if body else None
-        rows = len(re.findall(r"<ogLmPpSeq>", body or ""))
-        verdict = ("retMsg=%s" % code) if code else ("정상 %d건" % rows if body else how)
-        results.append(code or ("ok" if body else "err"))
-        log("  %d회  %5.1f초  %s" % (i, took, verdict))
-        if i < times:
-            time.sleep(gap)
-    ok = sum(1 for r in results if r == "ok")
+    t0 = time.time()
+    body, how = get(url, timeout=40)
+    took = time.time() - t0
+    code = ret_msg(body) if body else None
+    if code:
+        return "retMsg=%s" % code, took
+    if body:
+        return "정상 %d건" % len(re.findall(r"<ogLmPpSeq>", body)), took
+    return how, took
+
+
+def dump_guide():
+    """안내 페이지가 서비스 목록을 어떻게 담고 있는지 본다.
+
+    /rest/ 가 본문에 없었다. 목록이 자바스크립트로 채워지거나 상세 페이지로
+    링크만 걸려 있을 수 있어, 이번엔 실제 구조를 보고 판단한다.
+    """
     log("")
-    log("  정상 %d / 401 %d / 기타 %d"
-        % (ok, results.count("401"), len(results) - ok - results.count("401")))
-    if ok and "401" in results:
-        log("  => 섞인다. 설정 문제가 아니라 조임이다 — 기다렸다 다시 걸면 된다.")
-    elif not ok:
-        log("  => 전부 실패. 승인 아이디 상태를 사람이 확인해야 한다.")
-    else:
-        log("  => 전부 정상. 401 은 아까 그 순간만의 일이었다.")
-
-
-# ------------------------------------------------------- 2) 자치법규 주소
-GUIDES = [
-    "https://opinion.lawmaking.go.kr/api/apiGuideInfo",
-    "https://opinion.lawmaking.go.kr/api/apiGuide",
-    "https://www.lawmaking.go.kr/api/apiGuideInfo",
-    "https://opinion.lawmaking.go.kr/lmPp/nsmLmPpList",
-    "https://opinion.lawmaking.go.kr/",
-]
-
-
-def read_guides():
-    log("")
-    log("=" * 68)
-    log("2) 안내 페이지를 읽어 서비스 이름을 찾는다")
-    log("=" * 68)
-    found = set()
-    for url in GUIDES:
-        body, how = get(url, timeout=30)
-        log("  %-52s %s" % (url.replace("https://", ""), how))
-        if not body:
-            continue
-        names = set(re.findall(r"/rest/([A-Za-z0-9_]+)", body))
-        if names:
-            log("      /rest/ 이름: %s" % ", ".join(sorted(names)))
-            found |= names
-        for word in ("자치법규", "조례", "지방"):
-            if word in body:
-                log("      '%s' 이 페이지에 있다" % word)
-        time.sleep(1)
-    if found:
-        log("")
-        log("  모은 이름: %s" % ", ".join(sorted(found)))
-    else:
-        log("")
-        log("  어느 페이지에서도 /rest/ 이름을 못 찾았다.")
-
-
-CANDIDATES = [
-    "ogLmPpMod",          # 아는 것 — 비교 기준
-    "ordinLmPp", "ordinPp", "ogOrdinLmPp", "ordLmPpMod", "ordLmPp",
-    "autoLmPpMod", "atrLmPpMod", "locLmPpMod", "ltcLmPpMod",
-    "ogLmPpModOrd", "ogOrdLmPpMod", "ogAutoLmPpMod",
-    "jaLmPpMod", "jchbLmPpMod", "ordinModPp",
-]
-
-
-def try_candidates():
-    log("")
-    log("=" * 68)
-    log("3) 이름을 더 걸어 본다 (404=그런 서비스 없음)")
-    log("=" * 68)
-    if not oc():
-        log("OC 없음 — 건너뛴다")
+    log("=" * 66)
+    log("안내 페이지 구조")
+    log("=" * 66)
+    body, how = get(GUIDE, timeout=30)
+    log("  %s  (길이 %s)" % (how, len(body) if body else "-"))
+    if not body:
         return
-    hits = []
-    for name in CANDIDATES:
-        url = ("%s/%s.xml?OC=%s&diff=0&pageSize=2&pageIndex=1"
-               % (REST, name, urllib.parse.quote(oc())))
-        body, how = get(url, timeout=30)
-        code = ret_msg(body) if body else None
-        if body and not code:
-            log("  %-16s ★ 응답 있음 (길이 %d)" % (name, len(body)))
-            log("       %s" % re.sub(r"\s+", " ", body[:200]))
-            hits.append(name)
-        else:
-            log("  %-16s %s" % (name, ("retMsg=%s" % code) if code else how))
-        time.sleep(1.5)
-    log("")
-    log("  살아 있는 이름: %s" % (", ".join(hits) if hits else "없음"))
+
+    links = re.findall(r'href=["\']([^"\']+)["\']', body)
+    inner = sorted({l for l in links
+                    if not l.startswith(("http", "#", "javascript", "mailto"))})
+    log("  내부 링크 %d개 (앞 25개):" % len(inner))
+    for l in inner[:25]:
+        log("     %s" % l)
+
+    # 목록을 눌렀을 때 부르는 주소가 onclick/data-*/script 안에 있을 수 있다.
+    calls = sorted(set(re.findall(r'(?:fn\w+|goDetail|apiDetail)\([^)]*\)', body)))
+    if calls:
+        log("  스크립트 호출 %d개 (앞 15개):" % len(calls))
+        for c in calls[:15]:
+            log("     %s" % c[:100])
+
+    ids = sorted(set(re.findall(r'(?:apiId|svcId|serviceId|guideId)["\']?\s*[:=]\s*["\']?(\w+)', body)))
+    if ids:
+        log("  서비스 식별자로 보이는 값: %s" % ", ".join(ids[:30]))
+
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
+    for word in ("자치법규", "조례", "입법예고", "국회"):
+        spots = [m.start() for m in re.finditer(word, text)][:3]
+        if spots:
+            log("  '%s' %d곳:" % (word, len(re.findall(word, text))))
+            for p in spots:
+                log("     …%s…" % text[max(0, p - 60):p + 60].strip())
 
 
 def main():
-    auth_pattern()
-    read_guides()
-    try_candidates()
+    log("=" * 66)
+    log("나가는 IP : %s" % egress_ip())
+    verdict, took = one_call() if oc() else ("OC 없음", 0)
+    log("목록 한 건: %s  (%.1f초)" % (verdict, took))
+    log("=" * 66)
+    dump_guide()
     return 0
 
 
