@@ -439,8 +439,58 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=1)
 
 
-def publish_notices(found):
-    """적중한 정부 입법예고를 기록한다. 페이지에 올릴지는 사람이 정한다.
+def gov_row(f, today, prev):
+    """정부 입법예고 한 건을 페이지가 읽는 모양으로 바꾼다."""
+    no = f["ogLmPpSeq"]
+    return {
+        "source": "gov",
+        "no": no,
+        "name": tidy_name(f.get("lsNm")) or "(제명 없음)",
+        "office": f.get("asndOfiNm", ""),
+        "lsCls": f.get("lsClsNm", ""),
+        "pntcNo": f.get("pntcNo", ""),
+        "st": f.get("stYd", ""),
+        "ed": f.get("edYd", ""),
+        "hits": f.get("hits") or [],
+        "laws": f.get("laws") or [],
+        "why": f.get("tier", "law"),
+        "penalties": f.get("penalties") or [],
+        "excerpt": f.get("excerpt", ""),
+        "link": DETAIL_PAGE % no,
+        "found": prev.get("found", today),
+        "followup": bool(prev.get("followup", False)),
+    }
+
+
+def assembly_row(f, today, prev):
+    """국회 입법예고 한 건을 같은 모양으로 바꾼다.
+
+    부처 대신 발의자가, 법령종류 대신 소관위원회가 들어간다. 제안이유에서 관심어가
+    나왔으면 'body', 법 이름만 걸렸으면 'law' — 정부 쪽과 같은 잣대다.
+    """
+    no = str(f.get("BILL_NO") or f.get("BILL_ID") or "")
+    return {
+        "source": "assembly",
+        "no": no,
+        "name": f.get("BILL_NAME") or "(의안명 없음)",
+        "office": f.get("PROPOSER") or "",
+        "lsCls": f.get("CURR_COMMITTEE") or "",
+        "pntcNo": "",
+        "st": f.get("NOTI_ST_DT") or "",
+        "ed": f.get("NOTI_ED_DT") or "",
+        "hits": f.get("hits") or [],
+        "laws": f.get("laws") or [],
+        "why": "body" if f.get("hits") else "law",
+        "penalties": [],
+        "excerpt": f.get("excerpt", "") or (f.get("note", "") or ""),
+        "link": f.get("LINK_URL") or "",
+        "found": prev.get("found", today),
+        "followup": bool(prev.get("followup", False)),
+    }
+
+
+def publish_notices(found, assembly_found=()):
+    """적중한 입법예고를 기록한다. 페이지에 올릴지는 사람이 정한다.
 
     키워드는 넓게 걸어 놓았기 때문에 걸린 것이 전부 PM 얘기는 아니다. 실제로 지금
     열려 있는 4건 중 PM에 직접 걸리는 건 도로교통법 시행규칙 한 건뿐이었다.
@@ -457,29 +507,20 @@ def publish_notices(found):
             prev = json.load(f).get("notices", [])
     except Exception:
         prev = []
-    by_no = {n["no"]: n for n in prev}
+    # 정부와 국회는 번호 체계가 달라 그대로 쓰면 언젠가 겹친다. 출처를 붙여 가른다.
+    # 출처가 없는 예전 기록은 정부 것이다 — 그때는 정부밖에 없었다.
+    by_key = {("%s:%s" % (n.get("source", "gov"), n["no"])): n for n in prev}
     today = now_kst().strftime("%Y-%m-%d")
     for f in found:
-        no = f["ogLmPpSeq"]
-        by_no[no] = {
-            "no": no,
-            "name": tidy_name(f.get("lsNm")) or "(제명 없음)",
-            "office": f.get("asndOfiNm", ""),
-            "lsCls": f.get("lsClsNm", ""),
-            "pntcNo": f.get("pntcNo", ""),
-            "st": f.get("stYd", ""),
-            "ed": f.get("edYd", ""),
-            "hits": f.get("hits") or [],
-            "laws": f.get("laws") or [],
-            "why": f.get("tier", "law"),
-            "penalties": f.get("penalties") or [],
-            "excerpt": f["excerpt"],
-            "link": DETAIL_PAGE % no,
-            "found": by_no.get(no, {}).get("found", today),
-            # 이미 사람이 판단해 둔 건이면 그 판단을 유지한다.
-            "followup": bool(by_no.get(no, {}).get("followup", False)),
-        }
-    notices = sorted(by_no.values(), key=lambda n: n.get("st", ""), reverse=True)
+        key = "gov:%s" % f["ogLmPpSeq"]
+        by_key[key] = gov_row(f, today, by_key.get(key, {}))
+    for f in assembly_found:
+        no = str(f.get("BILL_NO") or f.get("BILL_ID") or "")
+        if not no:
+            continue
+        key = "assembly:%s" % no
+        by_key[key] = assembly_row(f, today, by_key.get(key, {}))
+    notices = sorted(by_key.values(), key=lambda n: n.get("st", ""), reverse=True)
     with open(NOTICES_PATH, "w", encoding="utf-8") as f:
         json.dump({"updated": now_kst().strftime("%Y-%m-%d %H:%M"), "notices": notices},
                   f, ensure_ascii=False, indent=1)
@@ -839,8 +880,8 @@ def main():
         log("--dry-run: 상태 파일도 쓰지 않는다.")
         return 0
 
-    if found:
-        publish_notices(found)
+    if found or assembly_found:
+        publish_notices(found, assembly_found)
 
     if not aborted and not truncated:
         state["sweep_complete"] = True
