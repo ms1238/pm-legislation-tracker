@@ -509,7 +509,12 @@ def publish_notices(found, assembly_found=()):
         prev = []
     # 정부와 국회는 번호 체계가 달라 그대로 쓰면 언젠가 겹친다. 출처를 붙여 가른다.
     # 출처가 없는 예전 기록은 정부 것이다 — 그때는 정부밖에 없었다.
-    by_key = {("%s:%s" % (n.get("source", "gov"), n["no"])): n for n in prev}
+    by_key = {}
+    for n in prev:
+        # 출처가 없던 시절의 기록은 정부 것으로 채워 둔다. 이번에 다시 걸리지 않은
+        # 행은 그대로 실려 나가므로, 여기서 안 채우면 영영 빈 채로 남는다.
+        n.setdefault("source", "gov")
+        by_key["%s:%s" % (n["source"], n["no"])] = n
     today = now_kst().strftime("%Y-%m-%d")
     for f in found:
         key = "gov:%s" % f["ogLmPpSeq"]
