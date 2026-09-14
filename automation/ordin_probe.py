@@ -1,20 +1,26 @@
 # -*- coding: utf-8 -*-
-"""자치법규(지방) 입법예고 API가 있는지, 있다면 어떤 주소인지 알아본다.
+"""두 가지를 알아본다. 읽기만 하고 아무것도 저장하지 않는다.
 
-개발 컨테이너에서는 lawmaking.go.kr 이 막혀 있어 러너에서만 돌릴 수 있다.
-한 번 답을 얻으면 지울 파일이다 — lawmaking_probe.py 가 그랬던 것처럼.
+ 1. 401 이 간헐적인가. 같은 OC로 어떤 날은 되고 어떤 날은 안 된다. 한 번 걸러
+    포기할 일인지, 기다렸다 다시 걸 일인지에 따라 고칠 곳이 다르다.
+ 2. 자치법규(지방) 입법예고를 여는 주소가 있는가. 안내 페이지를 못 읽어서
+    이름을 짐작만 했고, 짐작한 여덟 개는 다 404였다.
 
-읽기만 한다. 아무것도 저장하지 않는다.
+개발 컨테이너에서는 lawmaking.go.kr 이 막혀 있어 러너에서만 돌아간다.
+답을 얻으면 지울 파일이다.
 """
 import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
-GUIDE = "https://opinion.lawmaking.go.kr/api/apiGuideInfo"
-UA = {"User-Agent": "Mozilla/5.0 (compatible; pm-legislation-tracker/1.0)"}
+REST = "https://www.lawmaking.go.kr/rest"
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0 Safari/537.36"}
 
 
 def oc():
@@ -25,104 +31,142 @@ def redact(t):
     return t.replace(oc(), "***OC***") if (oc() and t) else t
 
 
-def log(msg):
-    print(msg, flush=True)
+def log(m):
+    print(m, flush=True)
 
 
 def get(url, timeout=30):
+    """(본문, 설명). 실패해도 왜 실패했는지는 남긴다."""
     try:
         req = urllib.request.Request(url, headers=UA)
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.read().decode("utf-8", "replace")
+            return r.read().decode("utf-8", "replace"), "HTTP %d" % r.status
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            pass
+        return None, "HTTP %d %s %s" % (e.code, e.reason, body[:120])
     except Exception as e:
-        log("  실패 %s — %r" % (redact(url), e))
-        return None
+        return None, repr(e)
 
 
-def strip_tags(html):
-    html = re.sub(r"<script.*?</script>", " ", html, flags=re.S | re.I)
-    html = re.sub(r"<style.*?</style>", " ", html, flags=re.S | re.I)
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+def ret_msg(xml):
+    m = re.search(r"<retMsg>([^<]*)</retMsg>", xml or "")
+    return m.group(1) if m else None
 
 
-def read_guide():
-    """안내 페이지가 어떤 서비스를 열어 두었는지 본다."""
-    log("=" * 70)
-    log("1) API 안내 페이지에서 서비스 목록을 찾는다")
-    log("=" * 70)
-    html = get(GUIDE)
-    if not html:
-        log("안내 페이지를 못 읽었다.")
-        return
-
-    # /rest/... 로 시작하는 주소가 본문이든 링크든 다 모은다.
-    paths = sorted(set(re.findall(r"/rest/([A-Za-z0-9_]+)", html)))
-    log("발견된 /rest/ 엔드포인트 %d개:" % len(paths))
-    for p in paths:
-        log("   /rest/%s" % p)
-
-    text = strip_tags(html)
-    log("")
-    log("'자치법규'가 나오는 자리:")
-    hits = 0
-    for m in re.finditer("자치법규", text):
-        log("   …%s…" % text[max(0, m.start() - 90):m.start() + 90].strip())
-        hits += 1
-        if hits >= 6:
-            break
-    if not hits:
-        log("   (안내 페이지 본문에 '자치법규'라는 말이 없다)")
-
-    log("")
-    log("'입법예고'가 나오는 자리:")
-    hits = 0
-    for m in re.finditer("입법예고", text):
-        log("   …%s…" % text[max(0, m.start() - 80):m.start() + 80].strip())
-        hits += 1
-        if hits >= 6:
-            break
-
-
-def try_endpoints():
-    """이름을 짐작해 몇 개 걸어 본다. 안내 페이지가 답을 주면 이건 참고용이다."""
-    log("")
-    log("=" * 70)
-    log("2) 있을 법한 주소를 걸어 본다")
-    log("=" * 70)
+# ---------------------------------------------------------------- 1) 401
+def auth_pattern(times=6, gap=20):
+    """같은 요청을 여러 번 건다. 다 401이면 설정, 섞이면 조임이다."""
+    log("=" * 68)
+    log("1) 401 이 계속되는가, 섞이는가 — 같은 요청 %d번" % times)
+    log("=" * 68)
     if not oc():
-        log("OC 가 없어 건너뛴다.")
+        log("OC 없음 — 건너뛴다")
         return
-    base = "https://www.lawmaking.go.kr/rest/%s.xml?OC=%s&diff=0&pageSize=3&pageIndex=1"
-    names = [
-        "ogLmPpMod",        # 아는 것 — 비교 기준
-        "ordinLmPpMod",
-        "ogOrdinPpMod",
-        "ordinPpMod",
-        "ogJchLmPpMod",
-        "jchLmPpMod",
-        "lmPpModOrdin",
-        "ogLmPpModOrdin",
-    ]
-    for name in names:
-        url = base % (name, urllib.parse.quote(oc()))
+    url = ("%s/ogLmPpMod.xml?OC=%s&diff=0&pageSize=1&pageIndex=1"
+           % (REST, urllib.parse.quote(oc())))
+    results = []
+    for i in range(1, times + 1):
         t0 = time.time()
-        body = get(url, timeout=40)
+        body, how = get(url, timeout=40)
         took = time.time() - t0
-        if body is None:
-            log("  %-16s 응답 없음 (%.0f초)" % (name, took))
+        code = ret_msg(body) if body else None
+        rows = len(re.findall(r"<ogLmPpSeq>", body or ""))
+        verdict = ("retMsg=%s" % code) if code else ("정상 %d건" % rows if body else how)
+        results.append(code or ("ok" if body else "err"))
+        log("  %d회  %5.1f초  %s" % (i, took, verdict))
+        if i < times:
+            time.sleep(gap)
+    ok = sum(1 for r in results if r == "ok")
+    log("")
+    log("  정상 %d / 401 %d / 기타 %d"
+        % (ok, results.count("401"), len(results) - ok - results.count("401")))
+    if ok and "401" in results:
+        log("  => 섞인다. 설정 문제가 아니라 조임이다 — 기다렸다 다시 걸면 된다.")
+    elif not ok:
+        log("  => 전부 실패. 승인 아이디 상태를 사람이 확인해야 한다.")
+    else:
+        log("  => 전부 정상. 401 은 아까 그 순간만의 일이었다.")
+
+
+# ------------------------------------------------------- 2) 자치법규 주소
+GUIDES = [
+    "https://opinion.lawmaking.go.kr/api/apiGuideInfo",
+    "https://opinion.lawmaking.go.kr/api/apiGuide",
+    "https://www.lawmaking.go.kr/api/apiGuideInfo",
+    "https://opinion.lawmaking.go.kr/lmPp/nsmLmPpList",
+    "https://opinion.lawmaking.go.kr/",
+]
+
+
+def read_guides():
+    log("")
+    log("=" * 68)
+    log("2) 안내 페이지를 읽어 서비스 이름을 찾는다")
+    log("=" * 68)
+    found = set()
+    for url in GUIDES:
+        body, how = get(url, timeout=30)
+        log("  %-52s %s" % (url.replace("https://", ""), how))
+        if not body:
+            continue
+        names = set(re.findall(r"/rest/([A-Za-z0-9_]+)", body))
+        if names:
+            log("      /rest/ 이름: %s" % ", ".join(sorted(names)))
+            found |= names
+        for word in ("자치법규", "조례", "지방"):
+            if word in body:
+                log("      '%s' 이 페이지에 있다" % word)
+        time.sleep(1)
+    if found:
+        log("")
+        log("  모은 이름: %s" % ", ".join(sorted(found)))
+    else:
+        log("")
+        log("  어느 페이지에서도 /rest/ 이름을 못 찾았다.")
+
+
+CANDIDATES = [
+    "ogLmPpMod",          # 아는 것 — 비교 기준
+    "ordinLmPp", "ordinPp", "ogOrdinLmPp", "ordLmPpMod", "ordLmPp",
+    "autoLmPpMod", "atrLmPpMod", "locLmPpMod", "ltcLmPpMod",
+    "ogLmPpModOrd", "ogOrdLmPpMod", "ogAutoLmPpMod",
+    "jaLmPpMod", "jchbLmPpMod", "ordinModPp",
+]
+
+
+def try_candidates():
+    log("")
+    log("=" * 68)
+    log("3) 이름을 더 걸어 본다 (404=그런 서비스 없음)")
+    log("=" * 68)
+    if not oc():
+        log("OC 없음 — 건너뛴다")
+        return
+    hits = []
+    for name in CANDIDATES:
+        url = ("%s/%s.xml?OC=%s&diff=0&pageSize=2&pageIndex=1"
+               % (REST, name, urllib.parse.quote(oc())))
+        body, how = get(url, timeout=30)
+        code = ret_msg(body) if body else None
+        if body and not code:
+            log("  %-16s ★ 응답 있음 (길이 %d)" % (name, len(body)))
+            log("       %s" % re.sub(r"\s+", " ", body[:200]))
+            hits.append(name)
         else:
-            head = re.sub(r"\s+", " ", body[:160])
-            n = len(re.findall(r"<(?:ogLmPpSeq|lmPpSeq|seq)>", body))
-            log("  %-16s %6.1f초  길이%-7d 항목%-3d  %s"
-                % (name, took, len(body), n, head[:90]))
+            log("  %-16s %s" % (name, ("retMsg=%s" % code) if code else how))
         time.sleep(1.5)
+    log("")
+    log("  살아 있는 이름: %s" % (", ".join(hits) if hits else "없음"))
 
 
 def main():
-    if not oc():
-        log("LAWMAKING_OC 가 없다 — 안내 페이지만 읽는다.")
-    read_guide()
-    try_endpoints()
+    auth_pattern()
+    read_guides()
+    try_candidates()
     return 0
 
 
