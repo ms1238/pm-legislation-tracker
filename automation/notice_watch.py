@@ -264,7 +264,14 @@ def fetch_open_notices():
         if xml is None:
             return None if page == 1 else rows
         if "<retMsg>401</retMsg>" in xml:
-            log("OC 인증 실패(401) — LAWMAKING_OC 를 확인해야 한다")
+            # 시크릿을 의심할 일이 아니다. 같은 OC가 어떤 날은 되고 어떤 날은
+            # 401 이며, 같은 순간에도 러너 IP에 따라 401 과 타임아웃으로 갈렸다
+            # (실측). 상대가 출발지를 보고 막는 쪽이라 한 실행 안에서 다시 걸어도
+            # 같은 IP라 소용이 없다 — 그래서 재시도하지 않고, 대신 하루 여러 번
+            # 돌려서 되는 창을 잡는다.
+            log("401 — 서버가 이 요청을 거절했다. OC 값 문제가 아니라"
+                " 출발지(러너 IP)를 타는 거절로 보인다.")
+            log("이번 실행은 접고 다음 실행에 맡긴다. 상태는 건드리지 않는다.")
             return None
         got = [r for r in records(xml) if r.get("ogLmPpSeq")]
         fresh = [r for r in got if r["ogLmPpSeq"] not in seen_ids]
