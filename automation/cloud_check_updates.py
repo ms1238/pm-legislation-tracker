@@ -103,13 +103,17 @@ def api_health():
     ratio = API_FAILURES / API_ATTEMPTS
     return ratio, "%d건 중 %d건 실패 (%.0f%%)" % (API_ATTEMPTS, API_FAILURES, ratio * 100)
 
-def get_stage(key, bill_no):
+def bill_detail(key, bill_no):
+    """ALLBILL 한 건. 못 받으면 None — "정보가 없다"와 구분해야 하므로 빈 dict 가 아니다."""
     url = "https://open.assembly.go.kr/portal/openapi/ALLBILL?KEY=%s&Type=json&pIndex=1&pSize=5&BILL_NO=%s" % (key, bill_no)
     try:
         data = api_get(url)
-        row = data.get("ALLBILL", [None, None])[1]["row"][0]
+        return data.get("ALLBILL", [None, None])[1]["row"][0]
     except Exception:
         return None
+
+
+def stage_from_row(row):
     if row.get("PROM_DT"):
         return "공포 · " + row["PROM_DT"]
     if row.get("GVRN_TRSF_DT"):
@@ -128,20 +132,296 @@ def get_stage(key, bill_no):
         return "소관위 접수"
     return "정보없음"
 
-def search_new_bills(key, age="22"):
-    keywords = ["개인형 이동", "퍼스널모빌리티", "전동킥보드", "킥라니"]
-    found = {}
-    for kw in keywords:
-        enc = urllib.parse.quote(kw)
-        url = "https://open.assembly.go.kr/portal/openapi/TVBPMBILL11?KEY=%s&Type=json&pIndex=1&pSize=50&AGE=%s&BILL_NAME=%s" % (key, age, enc)
+
+def get_stage(key, bill_no):
+    row = bill_detail(key, bill_no)
+    return None if row is None else stage_from_row(row)
+
+
+# --- 신규 의안 탐지 ---------------------------------------------------------
+#
+# 예전에는 의안명에 PM 검색어가 들어간 것만 찾았다. 그래서 도로교통법 개정안은
+# 한 건도 못 잡았다 — 제명이 늘 "도로교통법 일부개정법률안"이라 검색어가 한 글자도
+# 안 들어가고, PM 얘기는 제안이유·주요내용에 있기 때문이다. 2026-08-13~09-16
+# 34일 동안 자동으로 추가된 의안이 0건이었던 이유가 이것이다. 그 사이에도 도로교통법
+# 개정안은 계속 발의됐고(2221403 이 그 예다), 지금 snapshot 에 있는 도로교통법
+# 27건은 전부 2026-08-21 에 사람이 한 번에 넣은 것이다.
+#
+# 이제 notice_watch.py 가 국회 입법예고에 쓰는 방식을 그대로 쓴다.
+#   1) 의안명에 PM 말이 직접 들어가면 그대로 적중(제정안 같은 것들)
+#   2) 지정 법(PM 규제가 실리는 법)의 개정안이면 후보로 잡고, 제안이유·주요내용을
+#      받아 PM 관심어가 있는 것만 남긴다
+#
+# 후보를 모으는 방법은 이름 검색이 아니라 '최근 발의분 훑기'다. 국회 API 의
+# BILL_NAME 필터가 부분일치인지 확인하지 못했고(2026-09-16 에 두 번 시도했으나
+# open.assembly.go.kr 이 응답하지 않아 16회 전부 타임아웃), 국회 입법예고 API 는
+# 부분일치가 안 되는 게 실측으로 확인돼 있다. 훑기는 그 성질에 기대지 않는다.
+
+BILL_NAME_KEYWORDS = ["개인형 이동", "퍼스널모빌리티", "전동킥보드", "킥라니"]
+
+# PM 규제가 실리는 법. 의안명 앞부분과 맞춰 보는 용도라 법 제명을 그대로 적는다.
+BILL_WATCH_LAWS = [
+    "도로교통법",                    # '자전거등'(자전거+개인형 이동장치) 정의와 통행·주차·제재
+    "자전거 이용 활성화에 관한 법률",   # 공공·공유 자전거 근거법
+    "도로법",
+    "주차장법",
+    "자동차관리법",
+    "교통약자의 이동편의 증진법",
+    "개인형 이동수단",                # PM 기본법 계열 제정안
+]
+
+# 제안이유·주요내용에서 찾을 말. 앞은 PM 고유어, 뒤는 인접어다. 인접어만 걸린 건도
+# 알리되 꼬리표를 달아 구분한다 — 거르는 건 사람이 한다(notice_watch 와 같은 원칙).
+BILL_PM_TERMS_DIRECT = ["개인형 이동장치", "개인형이동장치", "개인형 이동수단",
+                        "개인형이동수단", "전동킥보드", "킥보드", "전동이륜평행차",
+                        "퍼스널 모빌리티", "퍼스널모빌리티", "킥라니"]
+BILL_PM_TERMS_NEAR = ["자전거등", "전기자전거", "자전거 대여", "대여사업", "대여업",
+                      "공유 모빌리티", "공유모빌리티", "인명보호", "안전모"]
+
+# 훑을 기간. 하루 두 번 도니까 짧아도 되지만, 실행이 며칠 연속 실패해도 메워지도록
+# 넉넉히 둔다 — 2026-09 기준 실행 실패율이 절반 가까웠다.
+BILL_SWEEP_DAYS = 60
+# 쪽 크기는 큰 것부터 시도한다. 1000이 이 API 의 상한이지만 거부하는 날이 있어
+# (입법예고 쪽에서 쪽 크기 때문에 막힌 전례가 있다) 작은 것으로 물러설 길을 둔다.
+BILL_SWEEP_PAGE_SIZES = [1000, 100]
+BILL_SWEEP_MAX_PAGES = 6
+# 제안이유 조회는 후보 한 건당 한 번이다. 처음 도는 실행은 밀린 게 많아 수십 건이
+# 될 수 있어 상한을 둔다. 못 본 건 다음 실행이 이어서 본다(훑기 구간이 60일이라 남는다).
+BILL_SUMMARY_BUDGET = 40
+
+# 의안 목록 엔드포인트. 앞의 것이 제안일을 주지 않거나 응답하지 않으면 뒤를 쓴다.
+BILL_LIST_ENDPOINTS = ["nzmimeepazxkubdpn", "TVBPMBILL11"]
+
+
+def _first(row, *names):
+    """API 마다 같은 뜻의 필드 이름이 다르다. 먼저 값이 있는 것을 쓴다."""
+    for n in names:
+        v = row.get(n)
+        if v:
+            return str(v).strip()
+    return ""
+
+
+def bill_fields(row):
+    return {
+        "bill_no": _first(row, "BILL_NO"),
+        "bill_id": _first(row, "BILL_ID"),
+        "name": _first(row, "BILL_NAME", "BILL_NM"),
+        "proposer": _first(row, "PROPOSER", "PPSR_NM", "RST_PROPOSER", "PPSR"),
+        "date": _first(row, "PROPOSE_DT", "PPSL_DT", "PROPOSE_DATE")[:10],
+        "committee": _first(row, "COMMITTEE", "CURR_COMMITTEE", "JRCMIT_NM"),
+    }
+
+
+def fetch_bill_page(key, endpoint, age, pindex, psize):
+    """의안 목록 한 쪽. (행 목록, 총건수)."""
+    url = ("https://open.assembly.go.kr/portal/openapi/%s?KEY=%s&Type=json&pIndex=%d&pSize=%d&AGE=%s"
+           % (endpoint, key, pindex, psize, age))
+    data = api_get(url)          # 실패하면 예외 — 호출부가 센다
+    if "RESULT" in data:         # INFO-200 = 더 없음
+        return [], 0
+    try:
+        total = int(data[endpoint][0]["head"][0]["list_total_count"])
+        rows = data[endpoint][1]["row"]
+    except Exception:
+        return [], 0
+    return rows, total
+
+
+def sweep_one(key, endpoint, age, since, req_size):
+    """한 엔드포인트·한 쪽 크기로 훑어 본다. 못 하면 빈 목록.
+
+    쪽 순서가 오래된 것부터인지 새 것부터인지는 문서에 없다. 그래서 첫 쪽과 마지막
+    쪽의 제안일을 비교해 새 쪽이 어디인지 알아낸 뒤 그쪽부터 걸어간다.
+    """
+    try:
+        first_rows, total = fetch_bill_page(key, endpoint, age, 1, req_size)
+    except Exception:
+        log("%s 조회 실패(쪽 크기 %d)" % (endpoint, req_size))
+        return []
+    if not first_rows:
+        return []
+    if not any(bill_fields(r)["date"] for r in first_rows):
+        log("%s 응답에 제안일이 없다 — 이걸로는 기간 훑기를 못 한다" % endpoint)
+        return []
+
+    psize = len(first_rows)              # 요청보다 적게 주는 경우가 있다
+    last_page = max(1, (total + psize - 1) // psize)
+    cache = {1: first_rows}
+    newest_first = True
+    if last_page > 1:
+        try:
+            last_rows, _ = fetch_bill_page(key, endpoint, age, last_page, req_size)
+        except Exception:
+            last_rows = []
+        if last_rows:
+            cache[last_page] = last_rows
+            newest_first = (max(bill_fields(r)["date"] for r in first_rows)
+                            >= max(bill_fields(r)["date"] for r in last_rows))
+        else:
+            log("%s 마지막 쪽을 못 읽었다 — 앞쪽이 최신이라고 보고 진행한다" % endpoint)
+
+    pages = list(range(1, last_page + 1)) if newest_first else list(range(last_page, 0, -1))
+    out, walked = [], 0
+    for p in pages:
+        if walked >= BILL_SWEEP_MAX_PAGES:
+            log("훑기 상한 %d쪽에 걸렸다 — 더 오래된 쪽은 다음 실행에서 본다" % BILL_SWEEP_MAX_PAGES)
+            break
+        rows = cache.get(p)
+        if rows is None:
+            try:
+                rows, _ = fetch_bill_page(key, endpoint, age, p, req_size)
+            except Exception:
+                break
+            time.sleep(0.3)
+        walked += 1
+        fresh = [r for r in rows if bill_fields(r)["date"] >= since]
+        out += fresh
+        if len(fresh) < len(rows):       # 이 쪽에서 기간 밖으로 넘어갔다
+            break
+    if out:
+        log("최근 %d일(%s~) 발의 훑기: %s 에서 %d건, 쪽당 %d건으로 %d쪽 읽음%s"
+            % (BILL_SWEEP_DAYS, since, endpoint, len(out), psize, walked,
+               "" if newest_first else " (뒤쪽이 최신)"))
+    return out
+
+
+def sweep_recent_bills(key, age, since):
+    """since 이후에 발의된 의안을 훑는다. 이름 필터의 부분일치 여부에 기대지 않는다."""
+    for endpoint in BILL_LIST_ENDPOINTS:
+        for req_size in BILL_SWEEP_PAGE_SIZES:
+            rows = sweep_one(key, endpoint, age, since, req_size)
+            if rows:
+                return rows
+    log("최근 발의 훑기 실패 — 의안 목록을 못 받았다")
+    return []
+
+
+def bill_summary(key, bill_no):
+    """제안이유·주요내용. 못 받으면 None(모른다), 등록이 안 됐으면 빈 문자열."""
+    url = ("https://open.assembly.go.kr/portal/openapi/BPMBILLSUMMARY?KEY=%s&Type=json&pIndex=1&pSize=5&BILL_NO=%s"
+           % (key, urllib.parse.quote(str(bill_no))))
+    try:
+        data = api_get(url)
+    except Exception:
+        return None
+    if "RESULT" in data:          # INFO-200 = 그 의안 요약이 없다
+        return ""
+    try:
+        rows = data["BPMBILLSUMMARY"][1]["row"]
+    except Exception:
+        return None
+    return " ".join(str(r.get("SUMMARY") or "") for r in rows)
+
+
+def pm_terms_in(text):
+    return ([t for t in BILL_PM_TERMS_DIRECT if t in text],
+            [t for t in BILL_PM_TERMS_NEAR if t in text])
+
+
+def excerpt_around(text, term, width=130):
+    i = text.find(term)
+    if i < 0:
+        return " ".join(text[:width].split())
+    start = max(0, i - width // 3)
+    return (("…" if start else "") + " ".join(text[start:i + width].split()) + "…")
+
+
+def search_new_bills(key, age="22", known=(), skip=()):
+    """PM에 걸리는 새 의안을 찾는다. ({의안번호: 정보}, 걸러낸 의안번호 목록).
+
+    known  이미 추적 중인 의안번호 — 건너뛴다.
+    skip   지난 실행에서 제안이유를 읽고 PM 얘기가 아니라고 판정한 의안번호.
+           같은 본문을 매일 다시 받지 않으려고 기억해 둔다.
+    """
+    known = set(str(k) for k in known)
+    skip = set(str(k) for k in skip)
+    found, rejected = {}, []
+
+    # 1) 의안명에 PM 말이 직접 들어가는 것 — 본문을 안 봐도 된다.
+    for kw in BILL_NAME_KEYWORDS:
+        url = ("https://open.assembly.go.kr/portal/openapi/TVBPMBILL11?KEY=%s&Type=json&pIndex=1&pSize=100&AGE=%s&BILL_NAME=%s"
+               % (key, age, urllib.parse.quote(kw)))
         try:
             data = api_get(url)
             rows = data.get("TVBPMBILL11", [None, None])[1]["row"]
         except Exception:
             continue
         for r in rows:
-            found[r["BILL_NO"]] = {"name": r["BILL_NAME"], "bill_id": r.get("BILL_ID", "")}
-    return found
+            f = bill_fields(r)
+            if not f["bill_no"] or f["bill_no"] in known:
+                continue
+            f["tier"], f["why"], f["excerpt"] = "name", "의안명에 '%s'" % kw, ""
+            found[f["bill_no"]] = f
+
+    # 2) 지정 법 개정안 — 최근 발의분을 훑어 후보를 고르고, 제안이유로 거른다.
+    since = (now_kst() - timedelta(days=BILL_SWEEP_DAYS)).strftime("%Y-%m-%d")
+    budget = BILL_SUMMARY_BUDGET
+    for r in sweep_recent_bills(key, age, since):
+        f = bill_fields(r)
+        no = f["bill_no"]
+        if not no or no in known or no in skip or no in found:
+            continue
+        law = next((w for w in BILL_WATCH_LAWS if f["name"].startswith(w)), None)
+        if not law:
+            continue
+        if budget <= 0:
+            log("제안이유 조회 상한(%d건)에 걸렸다 — 남은 후보는 다음 실행에서 본다"
+                % BILL_SUMMARY_BUDGET)
+            break
+        budget -= 1
+        text = bill_summary(key, no)
+        time.sleep(0.3)
+        if text is None:
+            continue          # 못 읽었다 — 판정하지 않는다. 걸러낸 목록에도 넣지 않는다.
+        if not text:
+            # 발의 직후에는 제안이유가 아직 안 올라온 경우가 있다. 지정 법 개정안이니
+            # 일단 올리고 사람이 본다 — 여기서 버리면 다시 볼 기회가 없다.
+            f["tier"], f["why"], f["excerpt"] = "law", "%s 개정안 (제안이유 미등록 — 확인 필요)" % law, ""
+            found[no] = f
+            continue
+        direct, near = pm_terms_in(text)
+        if direct:
+            f["tier"] = "direct"
+            f["why"] = "%s 개정안 · 본문에 %s" % (law, ", ".join(direct[:3]))
+            f["excerpt"] = excerpt_around(text, direct[0])
+        elif near:
+            f["tier"] = "near"
+            f["why"] = "%s 개정안 · 본문에 %s (인접어)" % (law, ", ".join(near[:3]))
+            f["excerpt"] = excerpt_around(text, near[0])
+        else:
+            rejected.append(no)
+            continue
+        found[no] = f
+
+    if rejected:
+        log("지정 법 개정안이지만 제안이유에 PM 얘기가 없어 거른 것 %d건" % len(rejected))
+    return found, rejected
+
+
+def resolve_seed_bills(key, seeds, known, found):
+    """사람이 번호로 찍어 준 의안을 받아 온다.
+
+    본문 판정과 상관없이 추적에 넣는다 — 번호를 직접 넣었다는 건 이미 사람이
+    보고 판단했다는 뜻이다. 받아 온 것만 seeds 에서 빠진다. 못 받으면 남겨
+    두고 다음 실행에서 다시 본다(API 가 죽은 날 영영 잃지 않도록).
+    """
+    resolved = []
+    for no in list(seeds):
+        no = str(no)
+        if no in known or no in found:
+            resolved.append(no)
+            continue
+        row = bill_detail(key, no)
+        if row is None:
+            log("지정 의안 %s 을 못 받았다 — 다음 실행에서 다시 본다" % no)
+            continue
+        f = bill_fields(row)
+        f["bill_no"] = f["bill_no"] or no
+        f["tier"], f["why"], f["excerpt"] = "seed", "사람이 번호로 지정한 의안", ""
+        found[f["bill_no"]] = f
+        resolved.append(no)
+    return resolved
 
 PARTY_FIELDS = ["PLPT_NM", "POLY_NM", "PARTY_NM"]
 
@@ -437,13 +717,29 @@ def main():
             info["stage"] = new_stage
 
     log("=== 신규 의안 검색 ===")
-    found = search_new_bills(key)
+    known = snapshot["known_bill_nos"]
+    # 제안이유를 읽고 PM 얘기가 아니라고 판정한 의안. 같은 본문을 매일 다시 받지
+    # 않으려고 기억해 둔다. 훑기 구간(60일)보다 길게 들고 있을 이유는 없지만,
+    # 번호만이라 가볍다.
+    not_pm = snapshot.setdefault("not_pm_bill_nos", [])
+    found, rejected = search_new_bills(key, known=known, skip=not_pm)
+
+    # 사람이 번호로 찍어 준 의안. 본문 판정과 상관없이 추적에 넣는다.
+    seeds = snapshot.setdefault("seed_bill_nos", [])
+    for no in resolve_seed_bills(key, seeds, set(str(k) for k in known), found):
+        if no in seeds:
+            seeds.remove(no)
+
     for bill_no, info_found in found.items():
-        if bill_no not in snapshot["known_bill_nos"]:
+        if bill_no not in known:
             name = info_found["name"]
             bill_id = info_found.get("bill_id", "")
-            changes.append({"type": "new_bill", "bill_no": bill_no, "name": name})
-            snapshot["known_bill_nos"].append(bill_no)
+            changes.append({"type": "new_bill", "bill_no": bill_no, "name": name,
+                             "why": info_found.get("why", ""), "tier": info_found.get("tier", ""),
+                             "proposer": info_found.get("proposer", ""),
+                             "date": info_found.get("date", ""),
+                             "excerpt": info_found.get("excerpt", "")})
+            known.append(bill_no)
             seen_conf_ids = []
             if bill_id:
                 try:
@@ -453,7 +749,14 @@ def main():
                 except Exception:
                     pass
             snapshot["bills"][bill_no] = {"name": name, "stage": get_stage(key, bill_no) or "정보없음",
-                                            "committee": "국토교통위원회", "bill_id": bill_id, "seen_conf_ids": seen_conf_ids}
+                                            "committee": info_found.get("committee") or "(미확인)",
+                                            "bill_id": bill_id, "seen_conf_ids": seen_conf_ids}
+
+    # 걸러낸 것은 다음 실행에서 건너뛰도록 기억한다. 건전성 판정을 통과한 뒤에만
+    # 저장되므로(아래), 실패한 실행의 판정이 기준선이 되는 일은 없다.
+    if rejected:
+        not_pm.extend(n for n in rejected if n not in not_pm)
+        del not_pm[:-2000]
 
     snapshot["last_full_scan"] = now_kst().strftime("%Y-%m-%d")
 
@@ -517,7 +820,14 @@ def main():
         lines.append("변경 사항:")
         for c in changes:
             if c["type"] == "new_bill":
-                lines.append("• 🆕 새 의안 발견 — [%s] %s" % (c["bill_no"], c["name"]))
+                head = "• 🆕 새 의안 발견 — [%s] %s" % (c["bill_no"], c["name"])
+                if c.get("proposer") or c.get("date"):
+                    head += "\n   %s %s" % (c.get("proposer", ""), c.get("date", ""))
+                if c.get("why"):
+                    head += "\n   걸린 이유: %s" % c["why"]
+                if c.get("excerpt"):
+                    head += "\n   > %s" % c["excerpt"]
+                lines.append(head)
             elif c["type"] == "stage_change":
                 lines.append("• 🔄 [%s] %s\n   %s → %s" % (c["bill_no"], c["name"], c["old_stage"], c["new_stage"]))
             elif c["type"] == "member_seat_lost":

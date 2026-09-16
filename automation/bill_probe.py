@@ -138,6 +138,28 @@ def main():
         else:
             print("   %s → PM 관심어 없음 | %s…" % (no, text[:90].replace("\n", " ")))
         time.sleep(0.4)
+
+    print("\n=== 4. 지금 탐지 로직이 무엇을 알릴지 (실제 호출, 저장·알림 없음) ===")
+    sys.path.insert(0, BASE_DIR)
+    import cloud_check_updates as m
+    try:
+        found, rejected = m.search_new_bills(KEY, known=snapshot["known_bill_nos"],
+                                             skip=snapshot.get("not_pm_bill_nos", []))
+        m.resolve_seed_bills(KEY, snapshot.get("seed_bill_nos", []),
+                             set(str(k) for k in snapshot["known_bill_nos"]), found)
+    except SystemExit:
+        # 연결이 아예 안 되면 탐지 쪽이 그 자리에서 끝낸다(FAILFAST). 진단은 거기서
+        # 죽지 않고 그렇게 됐다는 사실만 남긴다.
+        print("   국회 API 연결이 안 돼 탐지가 즉시 종료됐다(FAILFAST).")
+        return 0
+    if not found:
+        print("   알릴 것 없음 (새로 걸린 의안 0건)")
+    for no, f in sorted(found.items()):
+        print("   [%s] %s | %s %s\n        %s" % (no, f["name"], f.get("proposer", ""),
+                                                  f.get("date", ""), f.get("why", "")))
+        if f.get("excerpt"):
+            print("        > %s" % f["excerpt"])
+    print("   제안이유에 PM 얘기가 없어 거른 것 %d건" % len(rejected))
     return 0
 
 
