@@ -53,6 +53,8 @@ def fake_api_get(url):
         return {"BPMBILLSUMMARY": [{}, {"row": [{"SUMMARY": SUMMARY[no]}]}]}
     if ep == "ALLBILL":
         no = q["BILL_NO"][0]
+        if no in MODE.get("allbill_missing", ()):     # 갓 접수돼 아직 안 올라온 것
+            return {"RESULT": {"CODE": "INFO-200"}}
         row = next((b for b in BILLS if b["BILL_NO"] == no), None)
         if row is None:
             return {"RESULT": {"CODE": "INFO-200"}}
@@ -61,6 +63,14 @@ def fake_api_get(url):
     if ep == "VCONFBILLCONFLIST":
         return {"RESULT": {"CODE": "INFO-200"}}
     if ep in ("nzmimeepazxkubdpn", "TVBPMBILL11"):
+        if q.get("BILL_NO"):
+            no = q["BILL_NO"][0]
+            if MODE.get("ignore_bill_no"):           # 필터가 무시되는 경우
+                return {ep: [{"head": [{"list_total_count": len(BILLS)}]}, {"row": BILLS[1:2]}]}  # 물어본 것과 다른 의안
+            hit = [b for b in BILLS if b["BILL_NO"] == no]
+            if not hit:
+                return {"RESULT": {"CODE": "INFO-200"}}
+            return {ep: [{"head": [{"list_total_count": 1}]}, {"row": hit}]}
         if q.get("BILL_NAME"):
             if MODE["name_filter"] == "none":         # 부분일치가 안 되는 경우
                 return {"RESULT": {"CODE": "INFO-200"}}
@@ -163,6 +173,20 @@ print("\n--- seed ---")
 print("  resolved:", resolved, "| 받아온 것:", {k: (v["name"], v["tier"]) for k, v in out.items()})
 assert resolved == ["2221403"] and out["2221403"]["tier"] == "seed"
 assert out["2221403"]["proposer"] == "홍길동의원 등 10인"
+
+# ALLBILL 에 아직 없어도 의안 목록에 있으면 찾아낸다
+MODE["allbill_missing"] = {"2221403"}
+out2 = {}
+assert m.resolve_seed_bills("KEY", ["2221403"], set(), out2) == ["2221403"]
+assert out2["2221403"]["name"] == "도로교통법 일부개정법률안", out2
+
+# BILL_NO 필터가 무시되면 엉뚱한 의안을 그 번호로 넣지 않는다
+MODE["ignore_bill_no"] = True
+out3 = {}
+assert m.resolve_seed_bills("KEY", ["2221403"], set(), out3) == [], out3
+assert out3 == {}, out3
+MODE["ignore_bill_no"] = False
+MODE["allbill_missing"] = set()
 
 resolved_missing = m.resolve_seed_bills("KEY", ["9999999"], set(), {})
 assert resolved_missing == [], resolved_missing   # 못 받으면 seeds 에 남는다

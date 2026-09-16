@@ -460,6 +460,34 @@ def search_new_bills(key, age="22", known=(), skip=()):
     return found, rejected
 
 
+def bill_by_no(key, bill_no):
+    """ALLBILL 에 아직 없는 의안을 의안 목록 쪽에서 찾아 본다.
+
+    갓 접수된 의안은 ALLBILL 에 며칠 늦게 올라온다(2026-09-16 에 2221403 이 그랬다).
+    BILL_NO 필터가 먹는지 확인되지 않았으므로 받아 온 행의 의안번호가 정말 물어본
+    번호인지 확인한다 — 필터가 무시되면 엉뚱한 의안을 그 번호로 넣게 된다.
+    """
+    want = str(bill_no)
+    for endpoint in BILL_LIST_ENDPOINTS:
+        url = ("https://open.assembly.go.kr/portal/openapi/%s?KEY=%s&Type=json&pIndex=1&pSize=5&BILL_NO=%s"
+               % (endpoint, key, urllib.parse.quote(want)))
+        try:
+            data = api_get(url)
+        except Exception:
+            continue
+        if "RESULT" in data:
+            continue
+        try:
+            rows = data[endpoint][1]["row"]
+        except Exception:
+            continue
+        for r in rows:
+            if bill_fields(r)["bill_no"] == want:
+                log("지정 의안 %s 을 %s 에서 찾았다 (ALLBILL 에는 아직 없다)" % (want, endpoint))
+                return r
+    return None
+
+
 def resolve_seed_bills(key, seeds, known, found):
     """사람이 번호로 찍어 준 의안을 받아 온다.
 
@@ -473,7 +501,7 @@ def resolve_seed_bills(key, seeds, known, found):
         if no in known or no in found:
             resolved.append(no)
             continue
-        row = bill_detail(key, no)
+        row = bill_detail(key, no) or bill_by_no(key, no)
         if row is None:
             log("지정 의안 %s 을 못 받았다 — 다음 실행에서 다시 본다" % no)
             continue
