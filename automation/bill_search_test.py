@@ -39,7 +39,7 @@ SUMMARY = {
 }
 
 MODE = {"order": "newest_first", "dates": True, "endpoint_ok": "nzmimeepazxkubdpn",
-        "max_psize": 1000}
+        "max_psize": 1000, "name_filter": "none"}
 CALLS = []
 
 def fake_api_get(url):
@@ -61,8 +61,16 @@ def fake_api_get(url):
     if ep == "VCONFBILLCONFLIST":
         return {"RESULT": {"CODE": "INFO-200"}}
     if ep in ("nzmimeepazxkubdpn", "TVBPMBILL11"):
-        if q.get("BILL_NAME"):                       # 이름 필터는 부분일치가 안 된다고 가정
-            return {"RESULT": {"CODE": "INFO-200"}}
+        if q.get("BILL_NAME"):
+            if MODE["name_filter"] == "none":         # 부분일치가 안 되는 경우
+                return {"RESULT": {"CODE": "INFO-200"}}
+            want = q["BILL_NAME"][0]
+            hit = [b for b in BILLS if want in b["BILL_NAME"]]
+            if MODE["name_filter"] == "partial_nodate":
+                hit = [{k: v for k, v in b.items() if k != "PROPOSE_DT"} for b in hit]
+            if not hit:
+                return {"RESULT": {"CODE": "INFO-200"}}
+            return {ep: [{"head": [{"list_total_count": len(hit)}]}, {"row": hit}]}
         if ep != MODE["endpoint_ok"]:
             return {"RESULT": {"CODE": "INFO-200"}}
         if int(q["pSize"][0]) > MODE["max_psize"]:   # 큰 쪽은 거부하는 날이 있다
@@ -77,6 +85,12 @@ def fake_api_get(url):
         return {ep: [{"head": [{"list_total_count": len(rows)}]}, {"row": page}]}
     raise AssertionError("예상 못 한 호출: " + url)
 
+CALLS_LOG = []
+_log = m.log
+def spy_log(msg):
+    CALLS_LOG.append(msg)
+    _log(msg)
+m.log = spy_log
 m.api_get = fake_api_get
 m.time.sleep = lambda *_: None
 m.BILL_SWEEP_PAGE_SIZES = [2]      # 쪽이 여러 개가 되도록 작게
@@ -86,6 +100,7 @@ KNOWN = ["2219714"]
 
 def run(label):
     CALLS[:] = []
+    CALLS_LOG[:] = []
     found, rejected = m.search_new_bills("KEY", known=KNOWN, skip=[])
     print("\n--- %s ---" % label)
     for no, f in sorted(found.items()):
@@ -122,6 +137,19 @@ f5, r5 = run("큰 쪽 크기를 거부당했을 때")
 assert set(f5) == set(f1), f5
 m.BILL_SWEEP_PAGE_SIZES = [2]
 MODE["max_psize"] = 1000
+
+# 이름 검색이 되는 경우 — 훑기 없이 이름으로 끝나야 한다
+MODE["name_filter"] = "partial"
+m.BILL_NAME_PAGE_SIZE = 2
+f6, r6 = run("이름 검색이 부분일치로 동작할 때")
+assert set(f6) == set(f1), f6
+assert not any("훑기" in c for c in CALLS_LOG), CALLS_LOG
+
+# 이름 검색은 되는데 제안일이 없는 경우 — 훑기로 물러서야 한다
+MODE["name_filter"] = "partial_nodate"
+f7, r7 = run("이름 검색에 제안일이 없을 때 (훑기로 물러섬)")
+assert set(f7) == set(f1), f7
+MODE["name_filter"] = "none"
 
 # skip 목록이 먹는지
 found5, rej5 = m.search_new_bills("KEY", known=KNOWN, skip=["2221402"])

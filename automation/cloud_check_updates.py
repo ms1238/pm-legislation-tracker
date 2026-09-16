@@ -152,10 +152,13 @@ def get_stage(key, bill_no):
 #   2) 지정 법(PM 규제가 실리는 법)의 개정안이면 후보로 잡고, 제안이유·주요내용을
 #      받아 PM 관심어가 있는 것만 남긴다
 #
-# 후보를 모으는 방법은 이름 검색이 아니라 '최근 발의분 훑기'다. 국회 API 의
-# BILL_NAME 필터가 부분일치인지 확인하지 못했고(2026-09-16 에 두 번 시도했으나
-# open.assembly.go.kr 이 응답하지 않아 16회 전부 타임아웃), 국회 입법예고 API 는
-# 부분일치가 안 되는 게 실측으로 확인돼 있다. 훑기는 그 성질에 기대지 않는다.
+# 후보는 지정 법 이름으로 직접 물어서 모은다. TVBPMBILL11 의 BILL_NAME 필터는
+# 부분일치가 맞다 — 2026-09-16 실측으로 '도로교통법' 157건, '개인형 이동' 13건이
+# 왔다(국회 입법예고 API 는 부분일치가 안 되는데, 이쪽은 다르다).
+#
+# 다만 그 성질에 매달지는 않는다. 응답에 제안일이 없거나 이름 검색이 빈손이면
+# '최근 발의분 훑기'로 물러선다 — 쪽을 걸어가며 받아 로컬에서 거르는 방식이라
+# 필터가 어떻게 동작하든 상관없다.
 
 BILL_NAME_KEYWORDS = ["개인형 이동", "퍼스널모빌리티", "전동킥보드", "킥라니"]
 
@@ -226,6 +229,64 @@ def fetch_bill_page(key, endpoint, age, pindex, psize):
     except Exception:
         return [], 0
     return rows, total
+
+
+# 지정 법 하나가 한 대(代) 국회에서 나올 수 있는 개정안 수. 2026-09 기준 22대
+# 도로교통법이 157건이라 4쪽(400건)이면 넉넉하다.
+BILL_NAME_MAX_PAGES = 4
+BILL_NAME_PAGE_SIZE = 100
+
+
+def bills_by_law_name(key, age, law, since):
+    """지정 법 이름으로 직접 물어 since 이후 발의분만 돌려준다.
+
+    쪽 순서를 모르므로 그 법의 의안을 다 받아 로컬에서 날짜로 거른다(한 법에 두세
+    쪽이라 싸다). 제안일이 없으면 걸러낼 방법이 없으니 None — "이 경로로는 못
+    한다"는 뜻이고, 호출부가 훑기로 물러선다.
+
+    의원발의만 담긴 목록과 달리 여기에는 정부제출·위원장 대안도 함께 온다.
+    """
+    rows, dated = [], False
+    for page in range(1, BILL_NAME_MAX_PAGES + 1):
+        url = ("https://open.assembly.go.kr/portal/openapi/TVBPMBILL11?KEY=%s&Type=json&pIndex=%d&pSize=%d&AGE=%s&BILL_NAME=%s"
+               % (key, page, BILL_NAME_PAGE_SIZE, age, urllib.parse.quote(law)))
+        try:
+            data = api_get(url)
+        except Exception:
+            return None
+        if "RESULT" in data:          # INFO-200 = 더 없음
+            break
+        try:
+            got = data["TVBPMBILL11"][1]["row"]
+        except Exception:
+            break
+        if any(bill_fields(r)["date"] for r in got):
+            dated = True
+        rows += got
+        if len(got) < BILL_NAME_PAGE_SIZE:
+            break
+        time.sleep(0.3)
+    if rows and not dated:
+        return None
+    return [r for r in rows if bill_fields(r)["date"] >= since]
+
+
+def collect_candidates(key, age, since):
+    """지정 법 개정안 후보를 모은다. 이름으로 묻고, 안 되면 훑기로 물러선다."""
+    by_name, ok = [], True
+    for law in BILL_WATCH_LAWS:
+        rows = bills_by_law_name(key, age, law, since)
+        if rows is None:
+            log("'%s' 이름 검색이 안 된다 — 최근 발의분 훑기로 물러선다" % law)
+            ok = False
+            break
+        by_name += rows
+    if ok and by_name:
+        log("지정 법 이름 검색: %s~ 발의분 %d건" % (since, len(by_name)))
+        return by_name
+    if ok:
+        log("지정 법 이름 검색이 빈손이다 — 훑기로 확인한다")
+    return sweep_recent_bills(key, age, since)
 
 
 def sweep_one(key, endpoint, age, since, req_size):
@@ -357,7 +418,7 @@ def search_new_bills(key, age="22", known=(), skip=()):
     # 2) 지정 법 개정안 — 최근 발의분을 훑어 후보를 고르고, 제안이유로 거른다.
     since = (now_kst() - timedelta(days=BILL_SWEEP_DAYS)).strftime("%Y-%m-%d")
     budget = BILL_SUMMARY_BUDGET
-    for r in sweep_recent_bills(key, age, since):
+    for r in collect_candidates(key, age, since):
         f = bill_fields(r)
         no = f["bill_no"]
         if not no or no in known or no in skip or no in found:
