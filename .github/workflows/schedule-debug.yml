@@ -16,6 +16,7 @@ on:
           - inspect       # 입법예고 한 건을 열어 본문·첨부 판정을 본다
           - sweep         # 감시를 통째로 시험 실행한다(슬랙·상태파일 없이)
           - schedule      # 국회 일정 조회 진단
+          - bills         # 신규 의안 탐지 진단(BILL_NAME 필터·최근 도로교통법 발의)
           - ordin         # 자치법규(지방) 입법예고 API가 있는지 알아본다
       seq:
         description: "inspect 일 때 열어볼 입법예고 번호(ogLmPpSeq)"
@@ -45,6 +46,13 @@ jobs:
           PYTHONUNBUFFERED: "1"
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
         run: python automation/schedule_debug.py
+
+      - name: 신규 의안 탐지 진단
+        if: ${{ inputs.mode == 'bills' }}
+        env:
+          PYTHONUNBUFFERED: "1"
+          ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
+        run: python automation/bill_probe.py
 
       # 아래 셋은 저장소 시크릿의 OC를 쓴다. 입력으로 받으면 실행 기록에 값이
       # 그대로 남아서, 시크릿이 있는 지금은 그럴 이유가 없다.
