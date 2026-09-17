@@ -865,6 +865,20 @@ def main():
     log("=== 추적 의안별 신규 상정 회의 확인 ===")
     changes.extend(check_bill_meetings(key, snapshot))
 
+    log("=== 검토보고서 확인 ===")
+    # 국회 Open API 에는 검토보고서가 없어 의안정보시스템 페이지에서 읽는다.
+    # 남의 사이트라 언제든 깨질 수 있으므로 실패가 이 실행 전체를 멈추지 않게 한다 —
+    # 다만 '못 읽었다'는 로그로 남긴다. 조용히 0건으로 넘어가면 안 된다.
+    try:
+        sys.path.insert(0, BASE_DIR)
+        import review_watch
+        report_changes, report_checked, report_unread = review_watch.check_reports(snapshot, log=log)
+        changes.extend(report_changes)
+        log("검토보고서: 의안 %d건 확인, 새 문서 %d건, 못 읽음 %d건"
+            % (report_checked, len(report_changes), len(report_unread)))
+    except Exception as e:
+        log("검토보고서 확인 실패(%s) — 이번 실행은 건너뛴다" % e)
+
     log("=== 국토위/행안위/법사위/본회의 일정 확인 ===")
     new_schedule_items, today_schedule_items = check_schedule(key, snapshot)
     for s in new_schedule_items:
@@ -934,6 +948,9 @@ def main():
                     lines.append("• 📄 [%s, %s] PM 관련 언급 있음(발언자 특정 안 됨)" % (where, c["date"]))
             elif c["type"] == "bill_new_meeting":
                 lines.append("• 🏛️ [%s] %s — 새로 상정됨 (%s %s, %s)" % (c["bill_no"], c["name"], c["sess"], c["dgr"], c["date"]))
+            elif c["type"] == "new_report":
+                lines.append("• 📑 검토보고서 — [%s] %s\n   %s\n   %s"
+                             % (c["bill_no"], c["name"], c["title"][:90], c["url"]))
             elif c["type"] == "new_schedule":
                 lines.append("• 🗓️ 새 일정 — %s, %s: %s" % (c["date"], c["committee"], c["content"]))
         lines.append("")

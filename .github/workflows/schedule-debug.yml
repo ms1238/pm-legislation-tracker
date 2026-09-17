@@ -18,6 +18,7 @@ on:
           - schedule      # 국회 일정 조회 진단
           - bills         # 신규 의안 탐지 진단(BILL_NAME 필터·최근 도로교통법 발의)
           - trend         # 추적 의안 동향 한눈에 보기(단계·상정·일정·검토보고서)
+          - reports       # 검토보고서 수집 확인(의안정보시스템 페이지 파싱)
           - ordin         # 자치법규(지방) 입법예고 API가 있는지 알아본다
       seq:
         description: "inspect 일 때 열어볼 입법예고 번호(ogLmPpSeq)"
@@ -47,6 +48,14 @@ jobs:
           PYTHONUNBUFFERED: "1"
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
         run: python automation/schedule_debug.py
+
+      - name: 검토보고서 수집 확인
+        if: ${{ inputs.mode == 'reports' }}
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python automation/review_watch_test.py
+          python automation/review_watch.py ${{ inputs.limit || 6 }}
 
       - name: 추적 의안 동향 점검
         if: ${{ inputs.mode == 'trend' }}
