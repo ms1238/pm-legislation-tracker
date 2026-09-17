@@ -61,7 +61,33 @@ def probe_filter(endpoint, bill_name):
     return rows
 
 
+def print_summaries(bill_nos):
+    """의안 제안이유·주요내용 전문을 찍는다. 페이지에 올릴 한 줄 요약을 지어내지
+    않고 원문을 보고 쓰려고 만들었다."""
+    for no in bill_nos:
+        url = ("https://open.assembly.go.kr/portal/openapi/BPMBILLSUMMARY?KEY=%s&Type=json&pIndex=1&pSize=5&BILL_NO=%s"
+               % (KEY, urllib.parse.quote(str(no))))
+        try:
+            data = get(url)
+        except Exception as e:
+            print("[%s] 호출 실패: %s" % (no, e))
+            continue
+        rows, why = rows_of(data, "BPMBILLSUMMARY")
+        if rows is None:
+            print("[%s] 요약 없음 (%s)" % (no, why))
+            continue
+        text = " ".join(str(r.get("SUMMARY") or "") for r in rows)
+        print("\n[%s] %d자\n%s" % (no, len(text), " ".join(text.split())))
+        time.sleep(0.4)
+    return 0
+
+
 def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "--summary":
+        if not KEY:
+            print("ASSEMBLY_API_KEY 환경변수가 없다")
+            return 1
+        return print_summaries(sys.argv[2].split(","))
     if not KEY:
         print("ASSEMBLY_API_KEY 환경변수가 없다")
         return 1
