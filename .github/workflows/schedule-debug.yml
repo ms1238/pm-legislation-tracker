@@ -55,7 +55,11 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: |
           python automation/review_watch_test.py
-          python automation/review_watch.py ${{ inputs.limit || 6 }}
+          if [ -n "${{ inputs.seq }}" ]; then
+            python automation/review_watch.py --dump "${{ inputs.seq }}"
+          else
+            python automation/review_watch.py ${{ inputs.limit || 6 }}
+          fi
 
       - name: 추적 의안 동향 점검
         if: ${{ inputs.mode == 'trend' }}

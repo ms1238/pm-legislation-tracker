@@ -161,6 +161,8 @@ def main(argv):
 
     상태 파일은 읽기만 하고 쓰지 않는다. 슬랙도 보내지 않는다.
     """
+    if len(argv) > 2 and argv[1] == "--dump":
+        return dump(argv[2])
     limit = int(argv[1]) if len(argv) > 1 else 5
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "snapshot.json"), encoding="utf-8") as f:
@@ -179,3 +181,40 @@ def main(argv):
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
+
+
+def dump(bill_id):
+    """의안정보시스템 페이지가 실제로 무엇을 담고 있는지 찍어 본다.
+
+    파싱이 안 될 때 추측으로 정규식을 고치지 않으려고 만들었다. 검토보고서가
+    첫 페이지에 없고 다른 주소에서 따로 오는 구조일 수 있어서, 그 주소 후보를
+    같이 뽑는다.
+    """
+    html = fetch_bill_page(bill_id)
+    if html is None:
+        print("페이지를 못 받았다")
+        return 1
+    print("길이 %d자" % len(html))
+    print("\n[걸린 말과 그 언저리]")
+    for t in REPORT_TERMS:
+        for mo in list(re.finditer(re.escape(t), html))[:2]:
+            at = mo.start()
+            print("  %s @%d: …%s…" % (t, at, text_of(html[max(0, at - 150):at + 150])[:220]))
+
+    print("\n[billId 를 달고 있는 다른 주소들]")
+    subs = sorted(set(re.findall(r'''["'](/[^"']*\.do[^"']*billId[^"']*)["']''', html)))
+    for u in subs[:25]:
+        print("  " + u)
+    if not subs:
+        print("  (없음)")
+
+    print("\n[자바스크립트 함수 호출 후보]")
+    calls = sorted(set(re.findall(r"(\w*(?:[Ff]ile|[Dd]oc|[Rr]eport|[Pp]opup)\w*)\s*\(", html)))
+    for c in calls[:30]:
+        print("  " + c)
+
+    print("\n[탭·메뉴로 보이는 글자]")
+    tabs = re.findall(r'''<a[^>]*>\s*([^<>]{2,30}(?:보고서|원문|정보|심사|자료|추계)[^<>]{0,20})\s*</a>''', html)
+    for t in sorted(set(tabs))[:20]:
+        print("  " + " ".join(t.split()))
+    return 0
