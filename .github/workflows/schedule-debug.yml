@@ -88,8 +88,12 @@ jobs:
           PYTHONUNBUFFERED: "1"
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
         run: |
-          python automation/bill_search_test.py
-          python automation/bill_probe.py
+          if [ -n "${{ inputs.seq }}" ]; then
+            python automation/bill_probe.py --summary "${{ inputs.seq }}"
+          else
+            python automation/bill_search_test.py
+            python automation/bill_probe.py
+          fi
 
       # 아래 셋은 저장소 시크릿의 OC를 쓴다. 입력으로 받으면 실행 기록에 값이
       # 그대로 남아서, 시크릿이 있는 지금은 그럴 이유가 없다.
