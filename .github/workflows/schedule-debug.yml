@@ -59,6 +59,8 @@ jobs:
             python automation/review_watch.py --dump "${{ inputs.seq }}"
             echo "--- 데이터 엔드포인트 두드려 보기 ---"
             python automation/review_watch.py --api "${{ inputs.seq }}"
+            echo "--- 문서 목록 주소 찾기 ---"
+            python automation/review_watch.py --docs "${{ inputs.seq }}"
           else
             python automation/review_watch.py ${{ inputs.limit || 6 }}
           fi

@@ -239,6 +239,65 @@ def dump(bill_id):
         print("  " + " ".join(t.split()))
     return 0
 
+# 실측으로 확인된 것(2026-09-17):
+#   GET /bill/bi/common/findBillDetail.do?billId=...  → HTTP 200 JSON
+#   다만 431자짜리 의안 기본정보뿐이고 문서 목록은 없다. POST 는 307 로 막힌다.
+BI_BASE = "https://likms.assembly.go.kr/bill/bi"
+
+
+def _get(url, referer=None):
+    head = dict(UA)
+    head["Accept"] = "application/json, text/plain, */*"
+    head["X-Requested-With"] = "XMLHttpRequest"
+    if referer:
+        head["Referer"] = referer
+    req = urllib.request.Request(url, headers=head)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            return resp.status, resp.headers.get("Content-Type", ""), resp.read()
+    except Exception as e:
+        return None, str(e), b""
+
+
+def probe_docs(bill_id):
+    """문서 목록을 주는 주소를 찾는다.
+
+    findBillDetail.do 는 의안 기본정보만 준다(실측). 문서는 다른 데서 온다.
+    형제 주소를 눌러 보고 어느 것이 JSON 을 주는지, 그 안에 검토보고서가 있는지 본다.
+    이름을 추측해서 코드에 박지 않으려고 여기서 먼저 확인한다.
+    """
+    ref = BILL_DETAIL % bill_id
+    print("[findBillDetail 전문]")
+    st, ct, raw = _get("%s/common/findBillDetail.do?billId=%s" % (BI_BASE, bill_id), ref)
+    body = raw.decode("utf-8", "replace")
+    print("  HTTP %s %s\n  %s" % (st, ct, body))
+
+    print("\n[형제 주소 눌러 보기]")
+    names = [
+        "common/findBillDocList.do", "common/findBillDoc.do", "common/findDocList.do",
+        "bill/detail/findBillDtlDocList.do", "bill/detail/findDocList.do",
+        "bill/detail/findBillDetailDoc.do", "bill/detail/billDocList.do",
+        "bill/detail/findBillDtl.do", "bill/detail/findBillStep.do",
+        "common/findBillStepList.do", "common/findBillRelatedDoc.do",
+        "dwld/findDocBndlList.do", "bill/detail/downloadDtlZip.do",
+    ]
+    for n in names:
+        url = "%s/%s?billId=%s" % (BI_BASE, n, bill_id)
+        st, ct, raw = _get(url, ref)
+        if st is None:
+            print("  %-42s → %s" % (n, ct[:60]))
+            continue
+        body = raw.decode("utf-8", "replace")
+        said = [t for t in REPORT_TERMS if t in body]
+        mark = "★" if said else " "
+        print("  %s %-40s → HTTP %s %s %d바이트%s" % (mark, n, st, ct.split(";")[0], len(raw),
+                                                    (" | " + ", ".join(said)) if said else ""))
+        if said or (len(raw) > 200 and "json" in ct.lower()):
+            print("      %s" % " ".join(body[:400].split()))
+        time.sleep(0.4)
+    return 0
+
+
 def probe_api(bill_id):
     """상세 페이지가 axios 로 부르는 데이터 엔드포인트를 두드려 본다.
 
@@ -287,4 +346,6 @@ def probe_api(bill_id):
 if __name__ == "__main__":
     if len(sys.argv) > 2 and sys.argv[1] == "--api":
         sys.exit(probe_api(sys.argv[2]))
+    if len(sys.argv) > 2 and sys.argv[1] == "--docs":
+        sys.exit(probe_docs(sys.argv[2]))
     sys.exit(main(sys.argv))
