@@ -19,6 +19,7 @@ on:
           - bills         # 신규 의안 탐지 진단(BILL_NAME 필터·최근 도로교통법 발의)
           - trend         # 추적 의안 동향 한눈에 보기(단계·상정·일정·검토보고서)
           - reports       # 검토보고서 수집 확인(의안정보시스템 페이지 파싱)
+          - browser       # 브라우저로 띄워 JS 가 부르는 주소를 관찰(진단 전용)
           - ordin         # 자치법규(지방) 입법예고 API가 있는지 알아본다
       seq:
         description: "inspect 일 때 열어볼 입법예고 번호(ogLmPpSeq)"
@@ -48,6 +49,15 @@ jobs:
           PYTHONUNBUFFERED: "1"
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
         run: python automation/schedule_debug.py
+
+      - name: 브라우저로 의안 페이지 관찰
+        if: ${{ inputs.mode == 'browser' }}
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          pip install --quiet playwright
+          playwright install --with-deps chromium
+          python automation/browser_probe.py "${{ inputs.seq }}"
 
       - name: 검토보고서 수집 확인
         if: ${{ inputs.mode == 'reports' }}
