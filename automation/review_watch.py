@@ -179,8 +179,6 @@ def main(argv):
     return 0
 
 
-if __name__ == "__main__":
-    sys.exit(main(sys.argv))
 
 
 def dump(bill_id):
@@ -218,3 +216,6 @@ def dump(bill_id):
     for t in sorted(set(tabs))[:20]:
         print("  " + " ".join(t.split()))
     return 0
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
