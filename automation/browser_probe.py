@@ -43,11 +43,21 @@ def main(argv):
             calls.append((resp.request.method, resp.status, u))
 
         page.on("response", on_response)
-        page.goto(TARGET % bill_id, wait_until="networkidle", timeout=60000)
-        page.wait_for_timeout(3000)
+        # networkidle 로 기다리면 60초를 넘긴다 — 이 페이지는 무언가를 계속 부른다.
+        # 뼈대만 받고 고정 시간 기다린다. 타임아웃이 나도 그때까지 잡힌 주소는 쓸모가
+        # 있으니 예외로 죽지 않는다.
+        try:
+            page.goto(TARGET % bill_id, wait_until="domcontentloaded", timeout=45000)
+        except Exception as e:
+            print("!! goto 실패(%s) — 그때까지 잡힌 것만 본다" % type(e).__name__)
+        page.wait_for_timeout(10000)
 
-        html = page.content()
-        text = page.inner_text("body")
+        try:
+            html = page.content()
+            text = page.inner_text("body")
+        except Exception as e:
+            print("!! 페이지 내용을 못 읽었다(%s)" % e)
+            html, text = "", ""
 
         print("=== 페이지가 부른 주소 (정적파일 제외) ===")
         for method, status, u in calls:
