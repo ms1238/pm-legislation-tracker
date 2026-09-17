@@ -865,19 +865,27 @@ def main():
     log("=== 추적 의안별 신규 상정 회의 확인 ===")
     changes.extend(check_bill_meetings(key, snapshot))
 
-    log("=== 검토보고서 확인 ===")
-    # 국회 Open API 에는 검토보고서가 없어 의안정보시스템 페이지에서 읽는다.
-    # 남의 사이트라 언제든 깨질 수 있으므로 실패가 이 실행 전체를 멈추지 않게 한다 —
-    # 다만 '못 읽었다'는 로그로 남긴다. 조용히 0건으로 넘어가면 안 된다.
-    try:
-        sys.path.insert(0, BASE_DIR)
-        import review_watch
-        report_changes, report_checked, report_unread = review_watch.check_reports(snapshot, log=log)
-        changes.extend(report_changes)
-        log("검토보고서: 의안 %d건 확인, 새 문서 %d건, 못 읽음 %d건"
-            % (report_checked, len(report_changes), len(report_unread)))
-    except Exception as e:
-        log("검토보고서 확인 실패(%s) — 이번 실행은 건너뛴다" % e)
+    # 검토보고서 수집은 아직 켜지 않는다. 의안정보시스템이 내용을 자바스크립트로
+    # 채우고, 그 데이터를 주는 주소를 아직 못 찾았다(2026-09-17 확인 경위는
+    # review_watch.py 머리말에 적어 뒀다). 켜 두면 의안마다 '못 읽었다' 경고만
+    # 쌓이고 남의 서버를 매일 서른 번 두드리게 된다. 길을 찾으면 이 빗장을 뺀다.
+    if os.environ.get("REVIEW_WATCH") != "1":
+        log("=== 검토보고서 확인 건너뜀 (REVIEW_WATCH=1 일 때만 돈다) ===")
+        report_changes = []
+    else:
+      log("=== 검토보고서 확인 ===")
+      # 국회 Open API 에는 검토보고서가 없어 의안정보시스템 페이지에서 읽는다.
+      # 남의 사이트라 언제든 깨질 수 있으므로 실패가 이 실행 전체를 멈추지 않게 한다 —
+      # 다만 '못 읽었다'는 로그로 남긴다. 조용히 0건으로 넘어가면 안 된다.
+      try:
+          sys.path.insert(0, BASE_DIR)
+          import review_watch
+          report_changes, report_checked, report_unread = review_watch.check_reports(snapshot, log=log)
+          changes.extend(report_changes)
+          log("검토보고서: 의안 %d건 확인, 새 문서 %d건, 못 읽음 %d건"
+              % (report_checked, len(report_changes), len(report_unread)))
+      except Exception as e:
+          log("검토보고서 확인 실패(%s) — 이번 실행은 건너뛴다" % e)
 
     log("=== 국토위/행안위/법사위/본회의 일정 확인 ===")
     new_schedule_items, today_schedule_items = check_schedule(key, snapshot)
