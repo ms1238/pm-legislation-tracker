@@ -259,6 +259,62 @@ def _get(url, referer=None):
         return None, str(e), b""
 
 
+def probe_info(bill_ids):
+    """브라우저가 실제로 부르는 주소를 그대로 두드린다.
+
+    2026-09-17 브라우저 관찰로 확인:
+      POST /bill/bi/bill/detail/billInfo.do   ← 페이지가 내용을 받는 곳 (GET 아님)
+      상세 페이지는 /bill/bi/billDetailPage.do?billId=...&currMenuNo=2600044 로 간다.
+
+    같은 관찰에서 더 중요한 것도 나왔다. 2219714(소관위 접수)는 브라우저로 띄워도
+    검토보고서가 0회다 — 아직 없는 의안이다. 검토보고서는 상정 단계에서 나오므로
+    심사가 진행된 의안으로 확인해야 한다. 그래서 여러 건을 받는다.
+    """
+    import json as _json
+    for bid in bill_ids:
+        print("\n=== %s ===" % bid)
+        for ctype, body in (("application/json", _json.dumps({"billId": bid}).encode()),
+                            ("application/x-www-form-urlencoded", ("billId=%s" % bid).encode())):
+            head = dict(UA)
+            head["Accept"] = "application/json, text/plain, */*"
+            head["X-Requested-With"] = "XMLHttpRequest"
+            head["Content-Type"] = ctype
+            head["Referer"] = "https://likms.assembly.go.kr/bill/bi/billDetailPage.do?billId=%s" % bid
+            req = urllib.request.Request(
+                "https://likms.assembly.go.kr/bill/bi/bill/detail/billInfo.do", data=body, headers=head)
+            try:
+                with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                    raw = resp.read().decode("utf-8", "replace")
+                    st = resp.status
+            except Exception as e:
+                print("  POST %-34s → %s" % (ctype.split("/")[-1], e))
+                continue
+            said = [t for t in REPORT_TERMS if t in raw]
+            print("  POST %-34s → HTTP %s, %d자, 검토보고서류: %s"
+                  % (ctype.split("/")[-1], st, len(raw), ", ".join(said) or "없음"))
+            try:
+                data = _json.loads(raw)
+                def keys(o, pre=""):
+                    if isinstance(o, dict):
+                        for k, v in o.items():
+                            if isinstance(v, (dict, list)):
+                                yield from keys(v, pre + k + ".")
+                            else:
+                                yield pre + k
+                    elif isinstance(o, list) and o:
+                        yield from keys(o[0], pre + "[].")
+                ks = sorted(set(keys(data)))
+                print("     필드 %d개: %s" % (len(ks), ", ".join(ks)[:600]))
+            except Exception:
+                print("     JSON 아님: %s" % " ".join(raw[:200].split()))
+            if said:
+                i = raw.find(said[0])
+                print("     언저리: …%s…" % " ".join(raw[max(0, i - 300):i + 400].split()))
+            time.sleep(0.5)
+            break     # 먼저 통한 방식만 본다
+    return 0
+
+
 def probe_docs(bill_id):
     """문서 목록을 주는 주소를 찾는다.
 
@@ -348,4 +404,6 @@ if __name__ == "__main__":
         sys.exit(probe_api(sys.argv[2]))
     if len(sys.argv) > 2 and sys.argv[1] == "--docs":
         sys.exit(probe_docs(sys.argv[2]))
+    if len(sys.argv) > 2 and sys.argv[1] == "--info":
+        sys.exit(probe_info(sys.argv[2].split(",")))
     sys.exit(main(sys.argv))

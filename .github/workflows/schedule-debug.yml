@@ -71,6 +71,8 @@ jobs:
             python automation/review_watch.py --api "${{ inputs.seq }}"
             echo "--- 문서 목록 주소 찾기 ---"
             python automation/review_watch.py --docs "${{ inputs.seq }}"
+            echo "--- 브라우저가 부르던 주소 그대로 ---"
+            python automation/review_watch.py --info "${{ inputs.seq }}"
           else
             python automation/review_watch.py ${{ inputs.limit || 6 }}
           fi
