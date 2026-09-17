@@ -239,5 +239,52 @@ def dump(bill_id):
         print("  " + " ".join(t.split()))
     return 0
 
+def probe_api(bill_id):
+    """상세 페이지가 axios 로 부르는 데이터 엔드포인트를 두드려 본다.
+
+    상세 페이지 HTML 에는 제안이유·제안자·의안원문·심사경과가 하나도 없다(실측).
+    내용은 전부 자바스크립트가 받아 채운다. 그 주소가 페이지 안에 적혀 있었다:
+      /bi/common/findBillDetail.do          ← 의안 상세 데이터
+      /bill/bi/bill/detail/downloadDtlZip.do ← 문서 묶음 내려받기
+
+    호출 방식(GET/POST, form/JSON)은 적혀 있지 않아 여기서 하나씩 재 본다.
+    """
+    import json as _json
+    targets = [
+        ("GET  form", "https://likms.assembly.go.kr/bi/common/findBillDetail.do?billId=%s" % bill_id, None, None),
+        ("POST form", "https://likms.assembly.go.kr/bi/common/findBillDetail.do",
+         ("billId=%s" % bill_id).encode(), "application/x-www-form-urlencoded"),
+        ("POST json", "https://likms.assembly.go.kr/bi/common/findBillDetail.do",
+         _json.dumps({"billId": bill_id}).encode(), "application/json"),
+        ("GET  form", "https://likms.assembly.go.kr/bill/bi/common/findBillDetail.do?billId=%s" % bill_id, None, None),
+    ]
+    for label, url, body, ctype in targets:
+        head = dict(UA)
+        head["Accept"] = "application/json, text/plain, */*"
+        head["X-Requested-With"] = "XMLHttpRequest"
+        head["Referer"] = BILL_DETAIL % bill_id
+        if ctype:
+            head["Content-Type"] = ctype
+        req = urllib.request.Request(url, data=body, headers=head)
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                raw = resp.read().decode("utf-8", "replace")
+                code = resp.status
+        except Exception as e:
+            print("  %s %-70s → %s" % (label, url[:70], e))
+            continue
+        said = [t for t in REPORT_TERMS if t in raw]
+        print("  %s %-70s → HTTP %s, %d자, 검토보고서류: %s"
+              % (label, url[:70], code, len(raw), ", ".join(said) or "없음"))
+        print("     첫 300자: %s" % " ".join(raw[:300].split()))
+        if said:
+            i = raw.find(said[0])
+            print("     언저리: …%s…" % " ".join(raw[max(0, i - 200):i + 300].split()))
+        time.sleep(0.5)
+    return 0
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 2 and sys.argv[1] == "--api":
+        sys.exit(probe_api(sys.argv[2]))
     sys.exit(main(sys.argv))
