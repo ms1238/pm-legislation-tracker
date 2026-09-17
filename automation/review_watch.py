@@ -211,6 +211,28 @@ def dump(bill_id):
     for c in calls[:30]:
         print("  " + c)
 
+    print("\n[의안 내용이 서버에서 그려지기는 하나]")
+    for probe in ["제안이유", "의안접수정보", "제안자", "소관위원회", "의안원문", "심사경과"]:
+        print("  %-10s %s" % (probe, "있음" if probe in html else "없음"))
+
+    print("\n[페이지가 부르는 .do 주소들]")
+    dos = sorted(set(re.findall(r'''["\'](/[\w/]+\.do)''', html)))
+    for u in dos[:30]:
+        print("  " + u)
+    if not dos:
+        print("  (없음)")
+
+    print("\n[ajax/fetch 로 보이는 주소 문자열]")
+    urls = sorted(set(re.findall(r'''(?:url|action)\s*[:=]\s*["\']([^"\']{4,120})["\']''', html)))
+    for u in urls[:30]:
+        print("  " + u)
+    if not urls:
+        print("  (없음)")
+
+    print("\n[script src]")
+    for u in sorted(set(re.findall(r'''<script[^>]+src=["\']([^"\']+)["\']''', html)))[:20]:
+        print("  " + u)
+
     print("\n[탭·메뉴로 보이는 글자]")
     tabs = re.findall(r'''<a[^>]*>\s*([^<>]{2,30}(?:보고서|원문|정보|심사|자료|추계)[^<>]{0,20})\s*</a>''', html)
     for t in sorted(set(tabs))[:20]:
