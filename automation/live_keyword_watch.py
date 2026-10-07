@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """유튜브 생중계(국정감사·상임위 등) 음성을 계속 듣다가 키워드가 나오면 슬랙으로 알린다.
 
-알림에는 발언 시각, 발언자(추정), 발언 요지·취지 분석이 함께 붙는다. 분석은
-Claude API 로 하며, 키가 없으면 분석 없이 원문만 보낸다.
+알림에는 발언 시각, 발언자(추정), 발언 성격·취지 태그, 앞뒤 발언 흐름이 붙는다.
+분석은 규칙 기반이라 외부 서비스 가입이나 비용이 없다. 발언자는 위원장의 마지막
+호명("○○○ 위원님 질의해 주십시오")으로 추정한다.
 
 슬랙은 웹훅이 묶인 채널 한 곳으로만 간다(예: #nationalauditrealtimetracker).
 팀 공용 알림의 SLACK_WEBHOOK_URL 은 일부러 읽지 않는다 — 음성 인식 오탐이 섞이는
@@ -17,7 +18,6 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
 비밀값은 스크립트 옆 텍스트 파일에 한 줄씩 넣어 두면 된다(.gitignore 처리됨).
 같은 이름의 환경변수가 있으면 그쪽이 먼저다.
     live_webhook.txt        슬랙 웹훅 주소        (SLACK_LIVE_WEBHOOK_URL)
-    live_anthropic_key.txt  Claude API 키(선택)   (ANTHROPIC_API_KEY)
 텔레그램은 TELEGRAM_TOKEN, TELEGRAM_CHAT_ID 환경변수로 켠다(선택).
 
 시작할 때 각 알림 수단으로 '감시 시작' 메시지를 한 번 보낸다. 이게 안 오면
@@ -27,19 +27,14 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
   - ffmpeg 를 한 번만 띄워 계속 듣고, 15초 구간을 3초씩 겹쳐 인식한다.
   - 인식은 별도 스레드에서 한다. 인식이 느려도 녹음이 멈추지 않는다.
   - 키워드가 나오면 바로 보내지 않고 다음 두 구간(약 25초)을 더 듣는다. 발언 취지는
-    키워드 뒤에 나오는 경우가 많아서다. 그 뒤 앞뒤 대화록을 붙여 분석하고 보낸다.
+    키워드 뒤에 나오는 경우가 많아서다. 그 뒤 앞뒤 발언을 붙여 보낸다.
   - 같은 키워드는 10분에 한 번만 알린다.
   - 스트림이 끊기면 다시 접속한다.
 """
-import collections, json, os, queue, subprocess, sys, threading, time, urllib.error, urllib.request
+import collections, json, os, queue, re, subprocess, sys, threading, time, urllib.error, urllib.request
 
 import speech_recognition as sr
 import yt_dlp
-
-try:
-    import anthropic
-except ImportError:                    # 분석은 선택 기능이라 없어도 돈다
-    anthropic = None
 
 # ==================== [ 설정 ] ====================
 YOUTUBE_URL = "https://www.youtube.com/watch?v=nCAVxaqGiVM"
@@ -56,9 +51,7 @@ BPS = RATE * WIDTH                 # 초당 바이트
 CHUNK_SEC, OVERLAP_SEC = 15, 3     # 15초 구간, 3초 겹침
 COOLDOWN_SEC = 600                 # 같은 키워드는 10분에 한 번만 알림
 FOLLOW_CHUNKS = 2                  # 감지 후 더 들을 구간 수(취지 파악용)
-CONTEXT_SEC = 8 * 60               # 분석에 넘길 앞쪽 대화록 길이. 국감 질의 한 순서(7분)를
-                                   # 덮어야 위원장의 '○○○ 위원님 질의하십시오'가 들어온다.
-CLAUDE_MODEL = "claude-opus-5-5"
+CONTEXT_BEFORE_SEC = 30            # 알림에 붙일 감지 앞쪽 발언 길이
 # ==================================================
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -77,12 +70,11 @@ def load_secret(env_name, filename, legacy_env=None):
 
 SLACK_WEBHOOK = load_secret("SLACK_LIVE_WEBHOOK_URL", "live_webhook.txt",
                             legacy_env="SLACK_PERSONAL_WEBHOOK_URL")
-ANTHROPIC_KEY = load_secret("ANTHROPIC_API_KEY", "live_anthropic_key.txt")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 last_alert = {}                    # keyword -> 마지막 알림 시각
-transcript = collections.deque()   # (구간 시작 시각, 문장) — 최근 CONTEXT_SEC 만 보관
+transcript = collections.deque()   # (구간 시작 시각, 문장) — 최근 몇 분만 보관
 pending = []                       # 뒤 구간을 기다리는 감지 건
 stream_title = ""                  # 유튜브 방송 제목(회의명 파악용)
 
@@ -130,129 +122,114 @@ def send_telegram(msg):
         log(f"❌ 텔레그램 전송 실패: {e}")
 
 
-# -------------------- 발언 분석 --------------------
-ANALYSIS_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "speaker": {"type": "string"},
-        "speaker_basis": {"type": "string"},
-        "speaker_confidence": {"type": "string", "enum": ["높음", "중간", "낮음"]},
-        "role": {"type": "string", "enum": ["위원 질의", "정부 답변", "위원장 진행", "참고인·증인", "기타"]},
-        "summary": {"type": "string"},
-        "intent": {"type": "string"},
-        "implication": {"type": "string"},
-    },
-    "required": ["speaker", "speaker_basis", "speaker_confidence", "role",
-                 "summary", "intent", "implication"],
-    "additionalProperties": False,
-}
+# -------------------- 발언 분석(규칙 기반, 무료) --------------------
+# 음성 인식은 화자를 구분하지 못한다. 대신 국감·상임위 질의는 위원장이
+# "○○○ 위원님 질의해 주십시오"라고 호명한 뒤 그 위원과 증인이 몇 분간 주고받는
+# 구조라, 마지막 호명을 기억해 두면 '지금 누구의 질의 순서인지'는 꽤 맞힌다.
 
-ANALYSIS_SYSTEM = """\
-당신은 국회 회의(국정감사·상임위원회) 생중계를 모니터링하는 대외협력 담당자를 돕는다.
-담당자는 공유 전동킥보드 등 개인형 이동장치(PM) 업계에서 일한다.
+# 호명: "김철수 위원님 질의해 주시기 바랍니다", "다음은 이영희 위원 보충질의" 등
+CALL_RE = re.compile(r"(?:^|\s)([가-힣]{2,4})\s?위원(?:님)?(?:께서|의)?\s?(?:보충\s?)?(?:질의|질문|발언|주질의)")
+NOT_NAMES = {"다음", "다음은", "존경하는", "여러", "상임", "전문", "소속", "모든", "각", "해당",
+             "그", "이", "저", "우리", "선배", "동료", "여야", "야당", "여당", "민주당", "국민의힘"}
+CALL_STALE_SEC = 15 * 60           # 호명 후 이만큼 지나면 '바뀌었을 수 있음'을 붙인다
 
-입력은 음성 인식으로 받아 적은 대화록이다. 오탈자, 띄어쓰기 오류, 동음이의어 오인식이
-많고 화자 구분이 없다. 각 줄 앞의 시각은 PC가 방송을 받은 시각이다.
+# 발언 성격 추정: 문장 끝 어미로 질의/답변을 가른다.
+ANSWER_RE = re.compile(r"(답변\s?드리|말씀\s?드리겠|말씀\s?드립니다|검토하겠습니다|"
+                       r"살펴보겠습니다|조치하겠습니다|노력하겠습니다|그렇습니다|맞습니다)")
+QUESTION_RE = re.compile(r"(습니까|십니까|입니까|겠습니까|나요|어떻게\s?생각|아십니까|않습니까)")
+CHAIR_RE = re.compile(r"(위원장입니다|정회|속개|산회|개의|의사일정|질의해\s?주시기|질의하십시오)")
 
-'감지 발언'의 화자를 추정하고, 그 발언의 요지와 취지를 정리하라.
+# 취지 태그: 앞뒤 1분 대화록에 나온 단어로 붙인다. 단어 빈도일 뿐 판단이 아니다.
+INTENT_TAGS = [
+    ("안전·사고", ["사고", "사망", "부상", "안전", "헬멧", "안전모"]),
+    ("단속·처벌", ["단속", "과태료", "처벌", "범칙금", "무면허", "적발"]),
+    ("주차·방치", ["방치", "주차", "견인", "보도", "통행", "불법 주차"]),
+    ("법·제도", ["법안", "개정", "입법", "규제", "면허", "제도", "기준", "시행령", "법률"]),
+    ("대책 촉구", ["대책", "강구", "마련", "촉구", "해야", "필요"]),
+    ("사업자·업계", ["업체", "사업자", "운영사", "대여", "업계", "플랫폼"]),
+    ("청소년", ["청소년", "학생", "미성년", "10대", "중학생", "고등학생"]),
+    ("지자체", ["지자체", "시청", "구청", "조례", "서울시"]),
+]
 
-- speaker: 위원장 호명("○○○ 위원님 질의해 주십시오"), 호칭("장관님", "위원님"),
-  자기소개, 답변 흐름 같은 단서로 추정한다. 이름은 대화록에 실제로 나온 것만 쓴다.
-  단서가 없으면 "불명"이라고 쓰고, 역할만 알면 "질의 위원(이름 불명)"처럼 쓴다.
-- speaker_basis: 추정 근거를 대화록 표현을 인용해 한 문장으로.
-- summary: 감지 발언과 바로 이어지는 흐름의 요지, 1~2문장.
-- intent: 발언자가 무엇을 원하는지(규제 강화 요구, 현황 질타, 대책 촉구, 해명 등), 1~2문장.
-- implication: PM 업계 관점의 시사점 한 문장. 직접 관련이 없으면 "직접 관련 없음"이라고 쓴다.
-- 음성 인식 오류로 보이는 단어는 문맥상 맞는 말로 읽되, 확신이 없으면 지어내지 마라.
-"""
+current_call = None                # (이름, 호명 시각, 호명 문장)
 
 
-def analyze(alert, context_lines):
-    """감지 건을 Claude 로 분석한다. 키가 없거나 실패하면 None."""
-    if not (anthropic and ANTHROPIC_KEY):
-        return None
-    convo = "\n".join(f"[{hhmmss(t)}] {s}" for t, s in context_lines)
-    user = (f"방송 제목: {stream_title or '알 수 없음'}\n"
-            f"감지 키워드: {', '.join(alert['keywords'])}\n"
-            f"감지 발언 [{hhmmss(alert['start'])}]: {alert['text']}\n\n"
-            f"대화록(오래된 순):\n{convo}")
-    try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
-        resp = client.beta.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=4000,
-            system=ANALYSIS_SYSTEM,
-            messages=[{"role": "user", "content": user}],
-            output_config={"effort": "medium",
-                           "format": {"type": "json_schema", "schema": ANALYSIS_SCHEMA}},
-            # 안전 분류기가 거절하면 서버가 다른 모델로 다시 돌린다.
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
-    except anthropic.AuthenticationError:
-        log("❌ 분석 실패: Claude API 키가 올바르지 않습니다")
-        return None
-    except anthropic.RateLimitError:
-        log("❌ 분석 실패: 사용량 한도 초과(잠시 후 다시 됩니다)")
-        return None
-    except anthropic.APIStatusError as e:
-        log(f"❌ 분석 실패: HTTP {e.status_code} {e.message}")
-        return None
-    except anthropic.APIConnectionError:
-        log("❌ 분석 실패: Claude API 에 연결할 수 없습니다")
-        return None
-    if resp.stop_reason != "end_turn":
-        log(f"❌ 분석 실패: 응답이 끝나지 않음({resp.stop_reason})")
-        return None
-    text = "".join(b.text for b in resp.content if b.type == "text")
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        log("❌ 분석 실패: 응답 형식 오류")
-        return None
+def update_speaker(text, start):
+    global current_call
+    for m in CALL_RE.finditer(text):
+        name = m.group(1)
+        if name not in NOT_NAMES:
+            current_call = (name, start, text)
+            log(f"👤 질의 순서 바뀜: {name} 위원")
 
 
-def format_slack(alert, a):
+def speaker_line(at):
+    if not current_call:
+        return "불명 (감시 시작 후 위원장 호명을 아직 듣지 못함)"
+    name, t, _ = current_call
+    mins = int((at - t) // 60)
+    line = f"{name} 위원 질의 순서 ({hhmmss(t)} 호명)"
+    if at - t > CALL_STALE_SEC:
+        line += f" — 호명 후 {mins}분 지나 바뀌었을 수 있음"
+    return line
+
+
+def kind_of(text):
+    if CHAIR_RE.search(text):
+        return "위원장 진행"
+    a, q = bool(ANSWER_RE.search(text)), bool(QUESTION_RE.search(text))
+    if q and not a:
+        return "위원 질의로 보임"
+    if a and not q:
+        return "정부·증인 답변으로 보임"
+    return "판별 어려움"
+
+
+def intent_tags(text):
+    flat = text.replace(" ", "")
+    return [tag for tag, words in INTENT_TAGS if any(w.replace(" ", "") in flat for w in words)]
+
+
+def format_slack(alert, context):
+    flow = "\n".join(f"> `{hhmmss(t)}` {s}" for t, s in context)
+    tags = intent_tags(" ".join(s for _, s in context))
     lines = [f"🚨 *키워드 감지: {', '.join(alert['keywords'])}*"]
     if stream_title:
         lines.append(f"*회의*  {stream_title}")
-    lines.append(f"*발언 시각*  {hhmmss(alert['start'])}경 (PC 수신 기준)")
-    if a:
-        lines += [
-            f"*발언자(추정)*  {a['speaker']} · {a['role']} · 확신도 {a['speaker_confidence']}",
-            f"      _근거: {a['speaker_basis']}_",
-            f"*요지*  {a['summary']}",
-            f"*취지*  {a['intent']}",
-            f"*PM 시사점*  {a['implication']}",
-        ]
-    else:
-        lines.append("_발언자·취지 분석 없음(Claude API 키 미설정 또는 분석 실패)_")
-    lines += [f"*원문(음성 인식)*", f"> {alert['text']}", f"<{YOUTUBE_URL}|▶ 방송 열기>"]
+    lines += [
+        f"*발언 시각*  {hhmmss(alert['start'])}경 (PC 수신 기준)",
+        f"*발언자(추정)*  {alert['speaker']}",
+        f"*발언 성격(추정)*  {kind_of(alert['text'])}",
+        f"*취지 태그*  {' · '.join(tags) if tags else '해당 없음'}  _(앞뒤 발언 단어 기준 자동 분류)_",
+        "*발언 흐름(음성 인식 원문)*",
+        flow,
+        f"<{YOUTUBE_URL}|▶ 방송 열기>",
+    ]
     return "\n".join(lines)
 
 
-def format_telegram(alert, a):
+def format_telegram(alert, context):
+    tags = intent_tags(" ".join(s for _, s in context))
     lines = ["🚨 [키워드 감지 알림]",
              f"• 키워드: {', '.join(alert['keywords'])}",
-             f"• 발언 시각: {hhmmss(alert['start'])}경"]
-    if a:
-        lines += [f"• 발언자(추정): {a['speaker']} ({a['role']})",
-                  f"• 요지: {a['summary']}",
-                  f"• 취지: {a['intent']}"]
-    lines += [f"• 원문: \"{alert['text']}\"", f"• 방송: {YOUTUBE_URL}"]
+             f"• 발언 시각: {hhmmss(alert['start'])}경",
+             f"• 발언자(추정): {alert['speaker']}",
+             f"• 발언 성격(추정): {kind_of(alert['text'])}",
+             f"• 취지 태그: {', '.join(tags) if tags else '해당 없음'}",
+             "• 발언 흐름:"]
+    lines += [f"  {hhmmss(t)} {s}" for t, s in context]
+    lines.append(f"• 방송: {YOUTUBE_URL}")
     return "\n".join(lines)
 
 
 def dispatch(alert):
-    """분석하고 보낸다. 분석이 수십 초 걸릴 수 있어 별도 스레드에서 돈다."""
-    context = [(t, s) for t, s in list(transcript) if t >= alert["start"] - CONTEXT_SEC]
+    """앞뒤 발언을 붙여 보낸다. 전송이 느려도 인식이 멈추지 않게 별도 스레드에서 돈다."""
+    context = [(t, s) for t, s in list(transcript)
+               if alert["start"] - CONTEXT_BEFORE_SEC <= t]
 
     def run():
-        a = analyze(alert, context)
-        if a:
-            log(f"🧠 분석: {a['speaker']} — {a['summary']}")
-        send_slack(format_slack(alert, a))
-        send_telegram(format_telegram(alert, a))
+        send_slack(format_slack(alert, context))
+        send_telegram(format_telegram(alert, context))
 
     threading.Thread(target=run, daemon=True).start()
 
@@ -276,6 +253,7 @@ def check_keywords(text, start):
     log(f"🗣️ {text}")
     print("=" * 50 + "\n", flush=True)
     pending.append({"keywords": fresh, "text": text, "start": start,
+                    "speaker": speaker_line(start),
                     "wait": FOLLOW_CHUNKS + 1})   # +1: 감지된 구간 자신도 곧 advance 된다
 
 
@@ -306,8 +284,9 @@ def stt_worker(q):
             text = r.recognize_google(sr.AudioData(pcm, RATE, WIDTH), language="ko-KR")
             log(text)
             transcript.append((start, text))
-            while transcript and transcript[0][0] < start - CONTEXT_SEC - 120:
+            while transcript and transcript[0][0] < start - 300:
                 transcript.popleft()
+            update_speaker(text, start)
             check_keywords(text, start)
         except sr.UnknownValueError:
             pass                       # 무음이거나 알아듣지 못함
@@ -337,12 +316,6 @@ def monitor_live_stream():
     log(f"알림: {', '.join(channels) if channels else '없음 — 콘솔에만 출력'}")
     if SLACK_WEBHOOK and not SLACK_WEBHOOK.startswith("https://hooks.slack.com/"):
         log(f"⚠️ 슬랙 웹훅 주소 형식이 이상합니다: {SLACK_WEBHOOK[:40]}...")
-    if anthropic is None:
-        log("분석: 꺼짐 — anthropic 패키지 없음(pip install anthropic)")
-    elif not ANTHROPIC_KEY:
-        log("분석: 꺼짐 — Claude API 키 없음(live_anthropic_key.txt)")
-    else:
-        log(f"분석: 켜짐 ({CLAUDE_MODEL})")
     log(f"키워드: {', '.join(KEYWORDS)}")
 
     q = queue.Queue(maxsize=20)

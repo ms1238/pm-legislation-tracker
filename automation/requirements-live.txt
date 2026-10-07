@@ -2,4 +2,3 @@
 # ffmpeg 는 pip 가 아니라 OS 패키지로 설치한다(winget install Gyan.FFmpeg / brew install ffmpeg).
 yt-dlp
 SpeechRecognition
-anthropic

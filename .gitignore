@@ -1,4 +1,3 @@
 __pycache__/
 *.pyc
 live_webhook.txt
-live_anthropic_key.txt
