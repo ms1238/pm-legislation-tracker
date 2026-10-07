@@ -1,0 +1,4 @@
+# live_keyword_watch.py 전용 — 개인 PC 에서만 설치한다(Actions 워크플로는 안 쓴다).
+# ffmpeg 는 pip 가 아니라 OS 패키지로 설치한다(brew install ffmpeg / winget install ffmpeg).
+yt-dlp
+SpeechRecognition
