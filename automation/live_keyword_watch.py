@@ -67,18 +67,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_secret(env_name, filename, legacy_env=None):
-    val = os.environ.get(env_name, "").strip()
-    if not val and legacy_env:
-        val = os.environ.get(legacy_env, "").strip()
+    """값과 출처를 돌려준다. 환경변수가 파일보다 먼저다."""
+    for name in (env_name, legacy_env):
+        if name and os.environ.get(name, "").strip():
+            return os.environ[name].strip(), f"환경변수 {name}"
     path = os.path.join(HERE, filename)
-    if not val and os.path.exists(path):
+    if os.path.exists(path):
         with open(path, encoding="utf-8-sig") as f:      # 메모장이 붙이는 BOM 제거
-            val = f.read().strip().strip('"').strip("'")
-    return val
+            return f.read().strip().strip('"').strip("'"), filename
+    return "", ""
 
 
-SLACK_WEBHOOK = load_secret("SLACK_LIVE_WEBHOOK_URL", "live_webhook.txt",
-                            legacy_env="SLACK_PERSONAL_WEBHOOK_URL")
+SLACK_WEBHOOK, SLACK_WEBHOOK_SRC = load_secret("SLACK_LIVE_WEBHOOK_URL", "live_webhook.txt",
+                                               legacy_env="SLACK_PERSONAL_WEBHOOK_URL")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
@@ -151,6 +152,9 @@ def send_slack(msg):
         log("슬랙 전송 성공")
     except Exception as e:
         log(f"❌ 슬랙 전송 실패: {e}")
+        if "no_service" in str(e) or "404" in str(e):
+            # 지운 웹훅이거나, 같은 터미널에 예전에 넣어 둔 환경변수가 새 파일을 가리는 경우가 많다.
+            log(f"   → 이 웹훅은 슬랙에서 삭제됐거나 잘못된 주소입니다. 읽은 곳: {SLACK_WEBHOOK_SRC}")
 
 
 def send_telegram(msg):
@@ -422,6 +426,8 @@ def monitor_live_stream():
                                 ("텔레그램", TELEGRAM_TOKEN and TELEGRAM_CHAT_ID)) if ok]
     log(f"📡 모니터링 시작: {YOUTUBE_URL}")
     log(f"알림: {', '.join(channels) if channels else '없음 — 콘솔에만 출력'}")
+    if SLACK_WEBHOOK:
+        log(f"슬랙 웹훅: {SLACK_WEBHOOK_SRC}에서 읽음 (…{SLACK_WEBHOOK[-6:]})")
     if SLACK_WEBHOOK and not SLACK_WEBHOOK.startswith("https://hooks.slack.com/"):
         log(f"⚠️ 슬랙 웹훅 주소 형식이 이상합니다: {SLACK_WEBHOOK[:40]}...")
     log(f"키워드: {', '.join(KEYWORDS)}")
