@@ -28,7 +28,9 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
   - 인식은 별도 스레드에서 한다. 인식이 느려도 녹음이 멈추지 않는다.
   - 키워드가 나오면 바로 보내지 않고 다음 두 구간(약 25초)을 더 듣는다. 발언 취지는
     키워드 뒤에 나오는 경우가 많아서다. 그 뒤 앞뒤 발언을 붙여 보낸다.
-  - 같은 키워드는 10분에 한 번만 알린다.
+  - 키워드가 언급될 때마다 알린다. 25초 안에 이어진 언급은 한 알림으로 묶는다.
+  - 발음 보정: 음성 인식의 다른 후보 문장도 보고, 자모 단위로 한 글자 정도 어긋난
+    표현(킥버드, 퀵보드 등)도 잡는다. 늘 틀리는 표현은 live_keywords.txt 에 등록한다.
   - '방송 열기' 링크는 실시간이 아니라 발언 시점(40초 전)으로 간다.
   - 정회로 방송이 끊겨도 꺼지지 않고 1분마다 재개를 확인한다. 끝난 방송을 다시보기로
     처음부터 재생하지 않는다.
@@ -59,7 +61,8 @@ KEYWORDS = [
 RATE, WIDTH = 16000, 2             # 16kHz, 16bit 모노
 BPS = RATE * WIDTH                 # 초당 바이트
 CHUNK_SEC, OVERLAP_SEC = 15, 3     # 15초 구간, 3초 겹침
-COOLDOWN_SEC = 600                 # 같은 키워드는 10분에 한 번만 알림
+COOLDOWN_SEC = 0                   # 같은 키워드 재알림 최소 간격(초). 0 = 언급될 때마다.
+                                   # 25초 안에 이어진 언급은 어차피 한 알림으로 묶인다.
 FOLLOW_CHUNKS = 2                  # 감지 후 더 들을 구간 수(취지 파악용)
 CONTEXT_BEFORE_SEC = 30            # 알림에 붙일 감지 앞쪽 발언 길이
 LINK_LEAD_SEC = 40                 # '방송 열기'를 발언보다 이만큼 앞에서 시작한다.
@@ -379,16 +382,118 @@ def dispatch(alert):
 # -------------------- 감지 --------------------
 KEYWORDS_FILE = os.path.join(HERE, "live_keywords.txt")
 _kw_mtime = None
+ALIASES = {"피엠": ["PM", "P.M"]}  # 키워드 -> 음성 인식이 대신 적는 표현들
+DEFAULT_KEYWORDS_FILE = """\
+# 감시할 키워드 — 한 줄에 하나. 저장하면 실행 중에도 바로 반영됩니다.
+#
+# 음성 인식이 늘 틀리게 적는 표현이 있으면 '=' 뒤에 쉼표로 적어 두세요.
+#   예) 킥보드 = 퀵보드, 킥보더
+# 적지 않아도 발음이 한 글자 정도 어긋난 건(킥버드, 킥보도 등) 알아서 잡습니다.
+# 두 글자 이하 키워드는 오탐을 막으려고 정확히 일치할 때만 잡습니다.
+
+개인형 이동장치 = 개인용 이동장치
+개인형 이동수단 = 개인용 이동수단
+퍼스널 모빌리티
+피엠 = PM, P.M
+공유 킥보드
+전동킥보드
+킥보드
+킥라니
+공유 모빌리티
+"""
+
+
+# ---- 발음 보정: 한글을 자모로 풀어 '거의 같은' 표현도 잡는다 ----
+_CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+_JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
+_JONG = " ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ"
+
+
+def to_jamo(text):
+    """글자를 자모로 풀고, 각 자모가 원문 몇 번째 글자에서 왔는지 함께 돌려준다."""
+    out, idx = [], []
+    for i, ch in enumerate(text):
+        code = ord(ch) - 0xAC00
+        if 0 <= code < 11172:
+            parts = [_CHO[code // 588], _JUNG[code % 588 // 28]]
+            if code % 28:
+                parts.append(_JONG[code % 28])
+        else:
+            parts = [ch.lower()]
+        out += parts
+        idx += [i] * len(parts)
+    return out, idx
+
+
+def _edit_distance(a, b, limit):
+    prev = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        cur = [i] + [0] * len(b)
+        for j, y in enumerate(b, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (x != y))
+        if min(cur) > limit:
+            return limit + 1
+        prev = cur
+    return prev[-1]
+
+
+def fuzzy_find(word, nospace):
+    """nospace 안에서 word 와 발음이 거의 같은 부분을 찾아 그 원문을 돌려준다.
+    두 글자 이하는 보정하지 않는다('장관'이 '장군'으로 잡히는 걸 막는다)."""
+    syll = len(word)
+    if syll <= 2:
+        return None
+    limit = 1 if syll <= 4 else 2
+    wj, _ = to_jamo(word)
+    tj, ti = to_jamo(nospace)
+    best = None
+    for size in range(len(wj) - limit, len(wj) + limit + 1):
+        for s0 in range(0, len(tj) - size + 1):
+            d = _edit_distance(wj, tj[s0:s0 + size], limit)
+            if d <= limit and (best is None or d < best[0]):
+                best = (d, s0, s0 + size)
+    if not best:
+        return None
+    _, s0, e0 = best
+    # 첫 자모가 같아야 한다 — '킥보드'와 '익보드' 같은 엉뚱한 일치를 줄인다.
+    if tj[s0] != wj[0]:
+        return None
+    return nospace[ti[s0]:ti[e0 - 1] + 1]
+
+
+def find_keywords(texts):
+    """여러 인식 후보에서 키워드를 찾는다. [(키워드, 실제로 적힌 표현)]
+    표현이 None 이면 1순위 문장에 그대로 있었고, "" 이면 다른 인식 후보에 있었다."""
+    found = {}
+    for n, text in enumerate(texts):
+        flat = text.replace(" ", "")
+        low = flat.lower()
+        for k in KEYWORDS:
+            if k in found:
+                continue
+            kk = k.replace(" ", "")
+            if kk in flat:
+                found[k] = None if n == 0 else ""
+                continue
+            for a in ALIASES.get(k, []):
+                if a.replace(" ", "").lower() in low:
+                    found[k] = a
+                    break
+            else:
+                hit = fuzzy_find(kk, flat)
+                if hit:
+                    found[k] = hit
+    return list(found.items())
+
 
 
 def refresh_keywords():
     """live_keywords.txt 가 바뀌었으면 다시 읽는다. 한 줄에 하나, # 뒤는 메모."""
-    global KEYWORDS, _kw_mtime
+    global KEYWORDS, ALIASES, _kw_mtime
     try:
         if not os.path.exists(KEYWORDS_FILE):
             with open(KEYWORDS_FILE, "w", encoding="utf-8") as f:
-                f.write("# 감시할 키워드 — 한 줄에 하나. 저장하면 실행 중에도 바로 반영됩니다.\n")
-                f.write("\n".join(KEYWORDS) + "\n")
+                f.write(DEFAULT_KEYWORDS_FILE)
         mtime = os.path.getmtime(KEYWORDS_FILE)
         if mtime == _kw_mtime:
             return
@@ -397,37 +502,57 @@ def refresh_keywords():
             text = raw.decode("utf-8-sig")
         except UnicodeDecodeError:
             text = raw.decode("cp949")
-        words = [ln.split("#", 1)[0].strip() for ln in text.splitlines()]
-        words = [w for w in words if w]
+        words, aliases = [], {}
+        for ln in text.splitlines():
+            ln = ln.split("#", 1)[0].strip()
+            if not ln:
+                continue
+            head, _, rest = ln.partition("=")
+            head = head.strip()
+            if not head:
+                continue
+            words.append(head)
+            aliases[head] = [a.strip() for a in rest.split(",") if a.strip()]
         if not words:
             log("⚠️ live_keywords.txt 가 비어 있어 이전 키워드를 그대로 씁니다")
         else:
             if _kw_mtime is not None:
                 log(f"🔄 키워드 갱신: {', '.join(words)}")
-            KEYWORDS = words
+            KEYWORDS, ALIASES = words, aliases
         _kw_mtime = mtime
     except OSError as e:
         log(f"⚠️ 키워드 파일을 읽지 못함: {e}")
-def check_keywords(text, start):
-    nospace = text.replace(" ", "")
+
+
+def check_keywords(text, start, alternatives=()):
     refresh_keywords()
-    hits = [k for k in KEYWORDS if k.replace(" ", "") in nospace]
+    hits = find_keywords([text, *alternatives])
     if not hits:
         return
     now = time.time()
-    fresh = [k for k in hits if now - last_alert.get(k, 0) > COOLDOWN_SEC]
-    # 같은 발언에 걸린 키워드는 모두 대기를 시작한다 — 겹친 구간에서 다시 잡혀도 조용하다.
-    for k in hits:
+    fresh = [(k, v) for k, v in hits if now - last_alert.get(k, 0) >= COOLDOWN_SEC]
+    for k, _ in hits:
         last_alert[k] = now
     if not fresh:
-        log(f"(대기 중이라 생략: {', '.join(hits)})")
+        log(f"(재알림 간격이라 생략: {', '.join(k for k, _ in hits)})")
+        return
+    labels = [k if v is None else f"{k}(다른 인식 후보)" if v == "" else f"{k}(←'{v}')"
+              for k, v in fresh]
+    record(f"   ↑ 🚨 키워드 감지: {', '.join(labels)}", start)
+    # 아직 보내지 않은 감지 건이 있으면 거기에 합친다. 겹친 구간에서 같은 말이 두 번
+    # 잡히거나, 한 질의에서 연달아 언급될 때 알림이 쏟아지지 않게 한다.
+    if pending:
+        alert = pending[-1]
+        for lab in labels:
+            if lab.split("(")[0] not in [x.split("(")[0] for x in alert["keywords"]]:
+                alert["keywords"].append(lab)
+        log(f"🚨 키워드 추가 감지: {', '.join(labels)} — 직전 알림에 합칩니다")
         return
     print("\n" + "=" * 50, flush=True)
-    log(f"🚨 키워드 감지: {', '.join(fresh)} — 뒤 발언을 {FOLLOW_CHUNKS}구간 더 듣고 보냅니다")
+    log(f"🚨 키워드 감지: {', '.join(labels)} — 뒤 발언을 {FOLLOW_CHUNKS}구간 더 듣고 보냅니다")
     log(f"🗣️ {text}")
     print("=" * 50 + "\n", flush=True)
-    record(f"   ↑ 🚨 키워드 감지: {', '.join(fresh)}", start)
-    pending.append({"keywords": fresh, "text": text, "start": start,
+    pending.append({"keywords": labels, "text": text, "start": start,
                     "speaker": speaker_line(start), "link": moment_link(start),
                     "wait": FOLLOW_CHUNKS + 1})   # +1: 감지된 구간 자신도 곧 advance 된다
 
@@ -456,7 +581,14 @@ def stt_worker(q):
             continue
         pcm, start = item
         try:
-            text = r.recognize_google(sr.AudioData(pcm, RATE, WIDTH), language="ko-KR")
+            # show_all: 1순위 문장 말고 다른 인식 후보도 받아 키워드를 찾는다.
+            res = r.recognize_google(sr.AudioData(pcm, RATE, WIDTH), language="ko-KR",
+                                     show_all=True)
+            alts = [a["transcript"] for a in (res or {}).get("alternative", [])
+                    if isinstance(a, dict) and a.get("transcript")] if isinstance(res, dict) else []
+            if not alts:
+                raise sr.UnknownValueError()
+            text, others = alts[0], alts[1:]
             log(text)
             record_utterance(text, start)
             transcript.append((start, text))
@@ -464,7 +596,7 @@ def stt_worker(q):
                 transcript.popleft()
             update_speaker(text, start)
             watch_session(text, start)
-            check_keywords(text, start)
+            check_keywords(text, start, others)
         except sr.UnknownValueError:
             pass                       # 무음이거나 알아듣지 못함
         except sr.RequestError as e:
