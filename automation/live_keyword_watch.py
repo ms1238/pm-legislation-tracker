@@ -17,9 +17,10 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
     python automation/live_keyword_watch.py "https://www.youtube.com/watch?v=..."   # 직접 지정
 
 원격 지정: 이 저장소의 automation/live_target.txt 에 유튜브 주소를 적어 두면, 실행 중인
-PC가 30초마다 확인해서 1~2분 안에 그 방송으로 갈아탄다. 'stop' 이라고 적으면 듣기를
+PC가 30초마다 확인해서 1분 안팎에 그 방송으로 갈아탄다. 'stop' 이라고 적으면 듣기를
 멈추고 다음 주소를 기다린다. Claude 에게 링크를 주면 Claude 가 이 파일을 고쳐 올린다.
 저장소가 공개라 PC 쪽엔 키가 필요 없다. 끄려면 live_remote.txt 에 off 를 적는다.
+채널 주소(@채널/live)는 받지 않는다 — 여러 생중계 중 엉뚱한 방송에 붙을 수 있어서다.
 명령줄에 주소를 주면 시작할 때는 그 주소를 쓰고, 이후 원격 지정이 바뀌면 따른다.
 
 비밀값은 스크립트 옆 텍스트 파일에 한 줄씩 넣어 두면 된다(.gitignore 처리됨).
@@ -57,8 +58,10 @@ import yt_dlp
 # ==================== [ 설정 ] ====================
 YOUTUBE_URL = "https://www.youtube.com/watch?v=nCAVxaqGiVM"   # 원격 지정도 명령줄 주소도 없을 때
 
-# 원격 지정 파일 위치. 공개 저장소라 인증 없이 읽는다. ETag 로 '바뀌었나'만 물어서
-# 바뀌지 않았으면(304) 깃허브 호출 한도(시간당 60회)에 잡히지 않는다.
+# 원격 지정 파일 위치. 공개 저장소라 인증 없이 읽는다.
+# 깃허브 API 는 인증이 없으면 시간당 60회(304 응답 포함)라 30초 주기를 못 버티고,
+# raw 주소는 5분 동안 캐시된다. 그래서 git 프로토콜로 브랜치의 최신 커밋 번호만 묻고
+# (호출 한도 없음, 1~2KB), 번호가 바뀌었을 때만 그 커밋에 고정된 raw 주소로 파일을 읽는다.
 REMOTE_REPO = "ms1238/pm-legislation-tracker"
 REMOTE_BRANCH = "claude/compassionate-hypatia-3an51t"
 REMOTE_PATH = "automation/live_target.txt"
@@ -123,7 +126,7 @@ transcript = collections.deque()   # (구간 시작 시각, 문장) — 최근 �
 pending = []                       # 뒤 구간을 기다리는 감지 건
 stream_title = ""                  # 유튜브 방송 제목(회의명 파악용)
 stream_meta = {"title": "", "id": "", "start": None}
-adjourned = threading.Event()      # 산회·감사 종료 선포를 들었다
+adjourned_gen = None               # 산회·감사 종료 선포를 들은 감시 대상(target gen)
 
 
 def log(msg):
@@ -152,17 +155,17 @@ def record(line, at=None):
             log(f"⚠️ 기록 파일 쓰기 실패: {e}")
 
 
-def stream_pos(at):
+def stream_pos(at, meta=None):
     """방송 경과 시간(h:mm:ss). 시작 시각을 모르면 빈 문자열."""
-    t0 = stream_meta.get("start")
+    t0 = (meta or stream_meta).get("start")
     if not t0:
         return ""
     sec = max(0, int(at - t0))
     return f"{sec // 3600}:{sec % 3600 // 60:02d}:{sec % 60:02d}"
 
 
-def record_utterance(text, at):
-    pos = stream_pos(at)
+def record_utterance(text, at, meta=None):
+    pos = stream_pos(at, meta)
     record(f"[{hhmmss(at)}{' | 방송 ' + pos if pos else ''}] {text}", at)
 
 
@@ -251,7 +254,7 @@ session_state = "unknown"          # unknown / 진행 / 정회
 _state_lock = threading.Lock()
 
 
-def set_session(new, reason, at=None):
+def set_session(new, reason, at=None, meta=None):
     """회의 상태가 바뀌었으면 기록하고 채널에 알린다."""
     global session_state
     at = at or time.time()
@@ -268,11 +271,12 @@ def set_session(new, reason, at=None):
     log(f"{head.replace('*', '')} — {reason}")
     record(f"\n===== {head.replace('*', '')} — {reason} =====", at)
     lines = [head, f"_{reason}_"]
-    if stream_title:
-        lines.append(f"*회의*  {stream_title}")
+    title = (meta or stream_meta).get("title") or stream_title
+    if title:
+        lines.append(f"*회의*  {title}")
     if new == "정회" and current_call:
         lines.append(f"*정회 직전 질의 순서*  {current_call[0]} 위원")
-    url, pos = moment_link(at)
+    url, pos = moment_link(at, meta)
     if pos:
         lines.append(f"<{url}|▶ 해당 지점 보기 ({pos})>")
     if LOG_LINK:
@@ -281,13 +285,22 @@ def set_session(new, reason, at=None):
     send_slack("\n".join(lines))
 
 
-def watch_session(text, start):
+def is_current(cgen):
+    """이 구간이 지금 감시 대상에서 온 것인가(갈아탄 뒤 늦게 인식된 이전 방송 구간이 아닌가)."""
+    with _target_lock:
+        return target["gen"] == cgen
+
+
+def watch_session(text, start, cgen, meta=None):
+    global adjourned_gen
+    if not is_current(cgen):
+        return                         # 이전 방송의 정회·산회가 새 방송 상태를 바꾸면 안 된다
     if RECESS_RE.search(text):
-        set_session("정회", "위원장 정회 선포", start)
+        set_session("정회", "위원장 정회 선포", start, meta)
     elif RESUME_RE.search(text):
-        set_session("진행", "위원장 속개·개의 선포", start)
-    if ADJOURN_RE.search(text) and "정회" not in text and not adjourned.is_set():
-        adjourned.set()
+        set_session("진행", "위원장 속개·개의 선포", start, meta)
+    if ADJOURN_RE.search(text) and "정회" not in text and adjourned_gen != cgen:
+        adjourned_gen = cgen
         log("🏁 산회(감사 종료) 선포 감지 — 방송이 끝나면 감시를 마칩니다.")
         record("\n===== 🏁 산회(감사 종료) 선포 =====")
         send_slack("🏁 산회(감사 종료) 선포 감지 — 방송 송출이 끝나면 감시를 마칩니다.")
@@ -306,8 +319,10 @@ def load_speaker_state():
         pass
 
 
-def update_speaker(text, start):
+def update_speaker(text, start, cgen):
     global current_call
+    if not is_current(cgen):
+        return
     for rx in CALL_RES:
         for m in rx.finditer(text):
             name = m.group(1)
@@ -390,11 +405,12 @@ def highlight(text, terms, mark="*"):
     return "".join(out)
 
 
-def moment_link(at):
-    """발언 시점으로 가는 유튜브 링크. 시작 시각을 모르면 실시간 링크."""
-    vid, t0 = stream_meta.get("id"), stream_meta.get("start")
+def moment_link(at, meta=None):
+    """발언 시점으로 가는 유튜브 링크. 시작 시각을 모르면 그 방송 주소(실시간)."""
+    m = meta or stream_meta
+    vid, t0 = m.get("id"), m.get("start")
     if not (vid and t0):
-        return (target["url"] if target["url"] != "stop" else YOUTUBE_URL), None
+        return (m.get("url") or YOUTUBE_URL), None
     offset = max(0, int(at - t0 - LINK_LEAD_SEC))
     h, rem = divmod(offset, 3600)
     return f"https://www.youtube.com/watch?v={vid}&t={offset}s", f"{h}:{rem // 60:02d}:{rem % 60:02d}"
@@ -593,7 +609,7 @@ def refresh_keywords():
         log(f"⚠️ 키워드 파일을 읽지 못함: {e}")
 
 
-def check_keywords(text, start, alternatives=()):
+def check_keywords(text, start, alternatives=(), meta=None):
     refresh_keywords()
     hits = find_keywords([text, *alternatives])
     if not hits:
@@ -627,7 +643,8 @@ def check_keywords(text, start, alternatives=()):
                     # 감지 문장과 바로 앞 문장으로 질의·답변을 가린다.
                     "terms": terms,
                     "speaker": speaker_line(" ".join(t for _, t in list(transcript)[-2:]) or text, start),
-                    "link": moment_link(start), "title": stream_title,
+                    "link": moment_link(start, meta),
+                    "title": (meta or stream_meta).get("title") or stream_title,
                     "wait": FOLLOW_CHUNKS + 1})   # +1: 감지된 구간 자신도 곧 advance 된다
 
 
@@ -659,16 +676,18 @@ def reset_broadcast_state():
 
 def stt_worker(q):
     r = sr.Recognizer()
+    # 인식 요청이 응답 없이 멈추면 스레드가 영영 서 버린다(기본값은 시간 제한 없음).
+    r.operation_timeout = 30
     while True:
         item = q.get()
         if item is None:               # 스트림 끊김 신호
             flush_pending()
             continue
-        if item == "reset":            # 감시 대상이 바뀌었다 — 이전 방송의 흔적을 지운다
+        if isinstance(item, str) and item == "reset":   # 감시 대상이 바뀌었다 — 이전 방송 흔적 지움
             flush_pending()
             reset_broadcast_state()
             continue
-        pcm, start = item
+        pcm, start, cgen, cmeta = item   # 어느 감시 대상·방송의 구간인지 함께 다닌다
         try:
             # show_all: 1순위 문장 말고 다른 인식 후보도 받아 키워드를 찾는다.
             res = r.recognize_google(sr.AudioData(pcm, RATE, WIDTH), language="ko-KR",
@@ -679,13 +698,13 @@ def stt_worker(q):
                 raise sr.UnknownValueError()
             text, others = alts[0], alts[1:]
             log(text)
-            record_utterance(text, start)
+            record_utterance(text, start, cmeta)
             transcript.append((start, text))
             while transcript and transcript[0][0] < start - 300:
                 transcript.popleft()
-            update_speaker(text, start)
-            watch_session(text, start)
-            check_keywords(text, start, others)
+            update_speaker(text, start, cgen)
+            watch_session(text, start, cgen, cmeta)
+            check_keywords(text, start, others, cmeta)
         except sr.UnknownValueError:
             pass                       # 무음이거나 알아듣지 못함
         except sr.RequestError as e:
@@ -701,17 +720,23 @@ target = {"url": YOUTUBE_URL, "gen": 0, "src": "기본값"}   # gen: 바뀔 때�
 target_changed = threading.Event()
 current_proc = None                # 지금 듣고 있는 ffmpeg — 대상이 바뀌면 끊는다
 YOUTUBE_RE = re.compile(r"^https?://(?:www\.|m\.)?(?:youtube\.com|youtu\.be)/\S+$", re.IGNORECASE)
+# 채널 단위 주소: 그 채널의 '아무' 생중계로 붙어서, 상임위가 여럿이면 엉뚱한 방송을 듣게 된다.
+CHANNEL_RE = re.compile(r"youtube\.com/(?:@[^/?#]+|channel/[^/?#]+|c/[^/?#]+|user/[^/?#]+)"
+                        r"(?:/[^?#]*)?(?:[?#].*)?$", re.IGNORECASE)
 STOP_WORDS = {"stop", "중지", "멈춤", "정지"}
 
 
 def parse_target(text):
-    """원격 지정 파일에서 첫 유효 줄을 꺼낸다. 'stop' / 주소 / None(비어 있음) / ('invalid', 줄)."""
+    """원격 지정 파일에서 첫 유효 줄을 꺼낸다.
+    'stop' / 주소 / None(비어 있음) / ('invalid', 줄) / ('channel', 줄)."""
     for ln in (text or "").splitlines():
         ln = ln.strip().lstrip("\ufeff").strip()
         if not ln or ln.startswith("#"):
             continue
         if ln.lower() in STOP_WORDS:
             return "stop"
+        if CHANNEL_RE.search(ln):
+            return ("channel", ln)
         if YOUTUBE_RE.match(ln):
             return ln
         return ("invalid", ln)
@@ -729,18 +754,42 @@ def set_target(url, src):
         proc.kill()
 
 
-def fetch_remote(etag=None):
-    """(상태코드, ETag, 본문, 헤더). 304 면 본문 None."""
-    url = (f"https://api.github.com/repos/{REMOTE_REPO}/contents/{REMOTE_PATH}"
-           f"?ref={urllib.parse.quote(REMOTE_BRANCH, safe='')}")
-    headers = {"Accept": "application/vnd.github.raw", "User-Agent": "live-keyword-watch"}
-    if etag:
-        headers["If-None-Match"] = etag
+def wait_for_change(sec):
+    """sec 초 기다리되 감시 대상이 바뀌면 바로 돌아온다. 1초씩 끊어 기다려서 윈도우에서도
+    Ctrl+C 가 바로 먹는다(시간 제한을 건 Event.wait 는 Ctrl+C 로 깨지 않는 버전이 있다)."""
+    end = time.monotonic() + sec
+    while True:
+        left = end - time.monotonic()
+        if left <= 0:
+            return False
+        if target_changed.wait(min(1.0, left)):
+            return True
+
+
+def _http_get(url, headers=None):
+    req = urllib.request.Request(url, headers={"User-Agent": "git/2.40 live-keyword-watch",
+                                               **(headers or {})})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return r.read()
+
+
+def remote_check(last_sha):
+    """('same'|'ok'|'nofile'|'nobranch', 커밋 번호, 본문). 네트워크 문제는 예외로 올린다."""
+    refs = _http_get(f"https://github.com/{REMOTE_REPO}.git/info/refs?service=git-upload-pack")
+    m = re.search(r"([0-9a-f]{40}) refs/heads/" + re.escape(REMOTE_BRANCH) + r"\n",
+                  refs.decode("utf-8", "replace"))
+    if not m:
+        return "nobranch", None, None
+    sha = m.group(1)
+    if sha == last_sha:
+        return "same", sha, None
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=10) as r:
-            return r.status, r.headers.get("ETag"), r.read().decode("utf-8-sig"), r.headers
-    except urllib.error.HTTPError as e:     # urllib 은 304 도 HTTPError 로 올린다
-        return e.code, None, None, e.headers
+        body = _http_get(f"https://raw.githubusercontent.com/{REMOTE_REPO}/{sha}/{REMOTE_PATH}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return "nofile", sha, None
+        raise
+    return "ok", sha, body.decode("utf-8-sig")
 
 
 def apply_remote(text):
@@ -748,71 +797,68 @@ def apply_remote(text):
     if v is None:
         log("원격 지정 파일에 주소가 없습니다 — 지금 대상을 그대로 둡니다.")
     elif isinstance(v, tuple):
-        log(f"⚠️ 원격 지정이 유튜브 주소가 아닙니다: {v[1][:80]} — 무시합니다.")
-        send_slack(f"⚠️ 원격 지정 주소가 유튜브 주소가 아니라 무시했습니다: `{v[1][:80]}`")
+        why = ("채널 주소라서(그 채널의 다른 생중계에 붙을 수 있음) — 특정 방송 링크를 주세요"
+               if v[0] == "channel" else "유튜브 주소가 아니라서")
+        log(f"⚠️ 원격 지정 무시: {v[1][:80]} — {why}")
+        send_slack(f"⚠️ 원격 지정을 무시했습니다 — {why}.\n`{v[1][:80]}`")
     else:
         log(f"📥 원격 지정 바뀜: {v}")
         set_target(v, "원격 지정")
 
 
-def remote_poller(etag, last_text, apply_first):
-    """원격 지정 파일을 주기적으로 확인한다. 내용이 바뀌면(같은 주소를 다시 저장해도) 적용."""
-    fail_since = None
+def remote_poller(last_sha, last_text, apply_first):
+    """원격 지정 파일을 주기적으로 확인한다. 내용이 바뀌면(같은 주소를 다시 저장해도) 적용.
+    apply_first: 아직 내용을 한 번도 못 읽었을 때, 처음 읽은 내용을 적용할지(아니면 기준으로만)."""
+    fail_since, missing_logged = None, False
     while True:
         time.sleep(REMOTE_POLL_SEC)
         try:
-            status, new_etag, text, hdrs = fetch_remote(etag)
+            kind, sha, text = remote_check(last_sha)
         except Exception as e:             # 네트워크 끊김·시간 초과 — 조용히 다시 시도
             if fail_since is None:
                 fail_since = time.time()
-                log(f"⚠️ 원격 지정 확인 실패: {e} — 계속 다시 시도합니다.")
+                log(f"⚠️ 원격 지정 확인 실패: {short_error(e)} — 계속 다시 시도합니다.")
             continue
         if fail_since is not None:
             log("원격 지정 확인이 다시 됩니다.")
             fail_since = None
-        if status == 304:
+        if kind == "same":
             continue
-        if status == 200:
-            etag = new_etag
-            if last_text is None and not apply_first:
-                last_text = text           # 시작 때 못 읽었으면 첫 내용은 기준으로만 삼는다
-            elif text != last_text:
-                last_text = text
-                apply_remote(text)
-            apply_first = False
-        elif status == 404:
-            etag = None                    # 파일이 없다 — 생기면 그때 적용
+        last_sha = sha
+        if kind in ("nofile", "nobranch"):
+            if not missing_logged:
+                log(f"⚠️ 원격 지정 파일을 찾을 수 없습니다({REMOTE_BRANCH}:{REMOTE_PATH}) — "
+                    f"생기면 그 내용을 따릅니다.")
+                missing_logged = True
             apply_first = True
-        elif status in (403, 429):
-            reset = (hdrs or {}).get("X-RateLimit-Reset")
-            wait = 300
-            try:
-                wait = min(900, max(60, int(reset) - int(time.time())))
-            except (TypeError, ValueError):
-                pass
-            log(f"⚠️ 깃허브 호출 한도 — {wait // 60}분 뒤 다시 확인합니다.")
-            time.sleep(wait)
-        else:
-            log(f"⚠️ 원격 지정 확인 응답 {status} — 계속 다시 시도합니다.")
+            continue
+        missing_logged = False
+        if last_text is None and not apply_first:
+            last_text = text               # 시작 때 못 읽었으면 첫 내용은 기준으로만 삼는다
+        elif text != last_text:
+            last_text = text
+            apply_remote(text)
+        apply_first = False
 
 
 def start_remote(cli_url):
     """시작할 때 원격 지정을 읽어 첫 대상을 정하고, 확인 스레드를 띄운다."""
-    remote_v, etag, text = None, None, None
+    remote_v, sha, text = None, None, None
     apply_first = not cli_url          # 시작 때 못 읽었으면, 나중에 처음 읽은 내용을 적용할지
     if REMOTE_ON:
         try:
-            status, etag, text, _ = fetch_remote()
-            if status == 200:
+            kind, sha, text = remote_check(None)
+            if kind == "ok":
                 remote_v = parse_target(text)
             else:
-                etag, text = None, None
                 apply_first = True     # 파일이 아직 없다 — 생기면 그 내용을 따른다
-                log(f"원격 지정 파일 없음(응답 {status}) — 생기면 그때 따릅니다.")
-        except Exception as e:
+                log("원격 지정 파일 없음 — 생기면 그때 따릅니다.")
+        except Exception as e:         # 일시적 실패 — 명령줄 주소가 있으면 그게 우선이다
             log(f"⚠️ 원격 지정을 읽지 못함: {short_error(e)} — 계속 다시 시도합니다.")
     if cli_url:
         target.update(url=cli_url, src="명령줄")
+        if CHANNEL_RE.search(cli_url):
+            log("⚠️ 채널 주소입니다 — 그 채널의 다른 생중계에 붙을 수 있으니 특정 방송 링크를 권합니다.")
         if isinstance(remote_v, str) and remote_v != cli_url:
             log(f"ℹ️ 원격 지정은 다른 주소입니다({remote_v}). 명령줄 주소로 시작하고, "
                 f"원격 지정이 바뀌면 그쪽을 따릅니다. 원격 주소로 시작하려면 주소 없이 실행하세요.")
@@ -820,14 +866,34 @@ def start_remote(cli_url):
         target.update(url=remote_v, src="원격 지정")
     else:
         if isinstance(remote_v, tuple):
-            log(f"⚠️ 원격 지정이 유튜브 주소가 아닙니다: {remote_v[1][:80]} — 기본 주소로 시작합니다.")
+            log(f"⚠️ 원격 지정을 쓸 수 없습니다({remote_v[1][:80]}) — 기본 주소로 시작합니다.")
         target.update(url=YOUTUBE_URL, src="기본값")
     if REMOTE_ON:
-        threading.Thread(target=remote_poller, args=(etag, text, apply_first and text is None),
+        threading.Thread(target=remote_poller, args=(sha, text, apply_first and text is None),
                          daemon=True).start()
-        log(f"원격 지정: 켜짐 — {REMOTE_REPO} 의 {REMOTE_PATH} 를 {REMOTE_POLL_SEC}초마다 확인")
+        log(f"원격 지정: 켜짐 — {REMOTE_REPO} [{REMOTE_BRANCH}] {REMOTE_PATH} 를 "
+            f"{REMOTE_POLL_SEC}초마다 확인")
     else:
         log("원격 지정: 꺼짐(live_remote.txt)")
+
+
+def put_control(q, item):
+    """인식 큐에 제어 신호(None=알림 내보내기, 'reset'=방송 바뀜)를 넣는다. 인식이 막혀 큐가
+    꽉 차 있어도 메인 루프가 멈추지 않게, 가장 오래된 구간을 버리고 자리를 만든다."""
+    for _ in range(30):
+        try:
+            q.put(item, timeout=5)
+            return
+        except queue.Full:
+            try:
+                old = q.get_nowait()
+                if isinstance(old, str) and old == "reset":
+                    item = "reset"     # 'reset' 은 버리면 안 된다 — 알림 내보내기도 겸한다
+                else:
+                    log("⚠️ 인식이 밀려 오래된 구간 하나를 버림")
+            except queue.Empty:
+                pass
+    log("⚠️ 인식 스레드가 응답하지 않습니다 — 제어 신호를 건너뜁니다.")
 
 
 # -------------------- 스트림 --------------------
@@ -837,7 +903,8 @@ class NotLiveNow(Exception):
 
 def get_live_stream(url):
     """유튜브 생중계의 오디오 주소(HLS)와 방송 정보를 꺼낸다."""
-    opts = {"format": "bestaudio/best", "quiet": True, "no_warnings": True}
+    # noplaylist: 재생목록 안에서 복사한 링크(&list=...)도 그 영상 하나만 연다.
+    opts = {"format": "bestaudio/best", "quiet": True, "no_warnings": True, "noplaylist": True}
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     status = info.get("live_status")
@@ -900,6 +967,7 @@ def monitor_live_stream(cli_url=None):
     fail_notified = False
     active_gen = None
     done_gen = None                    # 이 대상은 끝났다(산회 후 방송 종료) — 새 지정을 기다린다
+    active_vid = None                  # 지금 대상에서 듣고 있는 영상 id
 
     while True:                        # 바깥 루프 = 끊겼을 때 재접속, 대상이 바뀌면 갈아타기
         target_changed.clear()
@@ -908,11 +976,10 @@ def monitor_live_stream(cli_url=None):
         if gen != active_gen:
             if active_gen is not None:
                 # 갈아타기: 기다리던 알림은 이전 방송 기준으로 내보내고, 방송별 상태를 비운다.
-                q.put("reset")
+                put_control(q, "reset")
                 with _state_lock:
                     session_state = "unknown"
-                adjourned.clear()
-                greeted, waiting_since, fail_notified = False, None, False
+                greeted, waiting_since, fail_notified, active_vid = False, None, False, None
                 record(f"\n##### 감시 대상 변경 {time.strftime('%Y-%m-%d %H:%M:%S')} → {url} ({src})")
                 if url == "stop":
                     log("⏹ 원격 지시로 듣기를 멈춥니다 — 새 주소를 기다립니다.")
@@ -921,13 +988,13 @@ def monitor_live_stream(cli_url=None):
                     log(f"🔄 감시 대상 변경 → {url} ({src})")
             active_gen = gen
         if url == "stop" or done_gen == gen:
-            target_changed.wait(60)
+            wait_for_change(60)
             continue
 
         try:
             stream_url, meta = get_live_stream(url)
         except NotLiveNow as e:
-            if adjourned.is_set():
+            if adjourned_gen == gen:
                 # 산회가 선포됐고 방송도 끝났다 — 이 방송은 여기까지.
                 log("🏁 산회 선포 후 방송 종료 확인 — 이 방송 감시를 마칩니다.")
                 record(f"##### 감시 종료 {time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -951,7 +1018,7 @@ def monitor_live_stream(cli_url=None):
                 mins = int((time.time() - waiting_since) // 60)
                 log(f"⏸ 재개 대기 중({mins}분째). 새 주소로 열리면 Claude 에게 링크를 주거나"
                     f"(원격 지정) Ctrl+C 후 새 주소로 다시 실행하세요.")
-            target_changed.wait(60)
+            wait_for_change(60)
             continue
         except Exception as e:
             err = short_error(e)
@@ -960,13 +1027,21 @@ def monitor_live_stream(cli_url=None):
                 send_slack(f"⚠️ 방송을 아직 열 수 없습니다 — 30초마다 다시 시도합니다.\n"
                            f"`{url}`\n_{err}_")
                 fail_notified = True
-            target_changed.wait(30)
+            wait_for_change(30)
             continue
 
         with _target_lock:
             if target["gen"] != gen:       # 주소를 꺼내는 사이 대상이 또 바뀌었다
                 continue
-        stream_meta, stream_title = meta, meta["title"]
+        if greeted and active_vid and meta["id"] and meta["id"] != active_vid:
+            # 같은 주소인데 다른 영상이 열렸다 — 다른 방송으로 갈아탄 것과 똑같이 다룬다.
+            log(f"🔄 같은 주소에서 다른 방송이 열림({active_vid} → {meta['id']})")
+            put_control(q, "reset")
+            with _state_lock:
+                session_state = "unknown"
+            greeted, waiting_since = False, None
+        active_vid = meta["id"] or active_vid
+        stream_meta, stream_title = dict(meta, url=url), meta["title"]
         fail_notified = False
         if waiting_since is not None:
             if greeted:
@@ -1013,7 +1088,7 @@ def monitor_live_stream(cli_url=None):
                 if len(buf) >= CHUNK_SEC * BPS:
                     start = time.time() - CHUNK_SEC   # 이 구간이 시작된 시각(수신 기준)
                     try:
-                        q.put_nowait((buf, start))
+                        q.put_nowait((buf, start, gen, stream_meta))
                     except queue.Full:
                         log("⚠️ 인식이 밀려 구간 하나를 건너뜀")
                     buf = buf[-OVERLAP_SEC * BPS:]    # 마지막 3초는 다음 구간에도
@@ -1022,12 +1097,12 @@ def monitor_live_stream(cli_url=None):
                 current_proc = None
             proc.kill()
             proc.wait()
-        q.put(None)                    # 기다리던 감지 건을 내보내라는 신호
+        put_control(q, None)           # 기다리던 감지 건을 내보내라는 신호
         with _target_lock:
             switched = target["gen"] != gen
         if not switched:
             log("스트림 끊김 — 10초 후 재접속")
-            target_changed.wait(10)
+            wait_for_change(10)
 
 
 if __name__ == "__main__":
