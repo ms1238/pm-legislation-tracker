@@ -49,6 +49,8 @@ YOUTUBE_URL = "https://www.youtube.com/watch?v=nCAVxaqGiVM"
 
 # 띄어쓰기는 무시하고 비교한다. 한 발언에 여러 개가 걸리면 모두 알린다.
 # '피엠'은 'PM'을 음성 인식이 한글로 받아 적은 형태다.
+# 실제로는 스크립트 옆 live_keywords.txt 를 쓴다(없으면 아래 목록으로 만든다).
+# 그 파일은 실행 중에 고쳐도 저장하는 즉시 반영된다 — 다시 켤 필요가 없다.
 KEYWORDS = [
     "개인형 이동장치", "개인형 이동수단", "퍼스널 모빌리티", "피엠",
     "공유 킥보드", "전동킥보드", "킥보드", "킥라니", "공유 모빌리티",
@@ -375,8 +377,40 @@ def dispatch(alert):
 
 
 # -------------------- 감지 --------------------
+KEYWORDS_FILE = os.path.join(HERE, "live_keywords.txt")
+_kw_mtime = None
+
+
+def refresh_keywords():
+    """live_keywords.txt 가 바뀌었으면 다시 읽는다. 한 줄에 하나, # 뒤는 메모."""
+    global KEYWORDS, _kw_mtime
+    try:
+        if not os.path.exists(KEYWORDS_FILE):
+            with open(KEYWORDS_FILE, "w", encoding="utf-8") as f:
+                f.write("# 감시할 키워드 — 한 줄에 하나. 저장하면 실행 중에도 바로 반영됩니다.\n")
+                f.write("\n".join(KEYWORDS) + "\n")
+        mtime = os.path.getmtime(KEYWORDS_FILE)
+        if mtime == _kw_mtime:
+            return
+        raw = open(KEYWORDS_FILE, "rb").read()
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("cp949")
+        words = [ln.split("#", 1)[0].strip() for ln in text.splitlines()]
+        words = [w for w in words if w]
+        if not words:
+            log("⚠️ live_keywords.txt 가 비어 있어 이전 키워드를 그대로 씁니다")
+        else:
+            if _kw_mtime is not None:
+                log(f"🔄 키워드 갱신: {', '.join(words)}")
+            KEYWORDS = words
+        _kw_mtime = mtime
+    except OSError as e:
+        log(f"⚠️ 키워드 파일을 읽지 못함: {e}")
 def check_keywords(text, start):
     nospace = text.replace(" ", "")
+    refresh_keywords()
     hits = [k for k in KEYWORDS if k.replace(" ", "") in nospace]
     if not hits:
         return
@@ -490,7 +524,8 @@ def monitor_live_stream():
         log(f"슬랙 웹훅: {SLACK_WEBHOOK_SRC}에서 읽음 (…{SLACK_WEBHOOK[-6:]})")
     if SLACK_WEBHOOK and not SLACK_WEBHOOK.startswith("https://hooks.slack.com/"):
         log(f"⚠️ 슬랙 웹훅 주소 형식이 이상합니다: {SLACK_WEBHOOK[:40]}...")
-    log(f"키워드: {', '.join(KEYWORDS)}")
+    refresh_keywords()
+    log(f"키워드: {', '.join(KEYWORDS)}  (live_keywords.txt — 실행 중 고쳐도 반영)")
     log("끝내려면 Ctrl+C. 정회로 방송이 멈춰도 꺼지지 않고 재개를 기다립니다.")
     keep_awake()
 
