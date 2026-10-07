@@ -29,7 +29,14 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
   - 키워드가 나오면 바로 보내지 않고 다음 두 구간(약 25초)을 더 듣는다. 발언 취지는
     키워드 뒤에 나오는 경우가 많아서다. 그 뒤 앞뒤 발언을 붙여 보낸다.
   - 같은 키워드는 10분에 한 번만 알린다.
-  - 스트림이 끊기면 다시 접속한다.
+  - '방송 열기' 링크는 실시간이 아니라 발언 시점(40초 전)으로 간다.
+  - 정회로 방송이 끊겨도 꺼지지 않고 1분마다 재개를 확인한다. 끝난 방송을 다시보기로
+    처음부터 재생하지 않는다.
+  - 위원장의 산회(감사 종료) 선포를 듣고, 방송 송출까지 끝나면 스스로 마친다.
+    선포만 듣고는 끄지 않는다 — 잘못 알아들었을 때 오후 감사를 놓치지 않기 위해서다.
+  - 윈도우에서는 실행 중 PC가 절전으로 들어가지 않게 한다.
+  - 인식한 발언 전부를 스크립트 옆 live_log_날짜.txt 에 시각·방송 경과 시간과 함께
+    남긴다. 질의 순서, 키워드 감지, 정회·재개·산회도 표시된다.
 """
 import collections, json, os, queue, re, subprocess, sys, threading, time, urllib.error, urllib.request
 
@@ -52,6 +59,8 @@ CHUNK_SEC, OVERLAP_SEC = 15, 3     # 15초 구간, 3초 겹침
 COOLDOWN_SEC = 600                 # 같은 키워드는 10분에 한 번만 알림
 FOLLOW_CHUNKS = 2                  # 감지 후 더 들을 구간 수(취지 파악용)
 CONTEXT_BEFORE_SEC = 30            # 알림에 붙일 감지 앞쪽 발언 길이
+LINK_LEAD_SEC = 40                 # '방송 열기'를 발언보다 이만큼 앞에서 시작한다.
+                                   # 유튜브 생중계 지연(10~30초)과 앞 맥락을 덮는다.
 # ==================================================
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -77,6 +86,8 @@ last_alert = {}                    # keyword -> 마지막 알림 시각
 transcript = collections.deque()   # (구간 시작 시각, 문장) — 최근 몇 분만 보관
 pending = []                       # 뒤 구간을 기다리는 감지 건
 stream_title = ""                  # 유튜브 방송 제목(회의명 파악용)
+stream_meta = {"title": "", "id": "", "start": None}
+adjourned = threading.Event()      # 산회·감사 종료 선포를 들었다
 
 
 def log(msg):
@@ -85,6 +96,37 @@ def log(msg):
 
 def hhmmss(ts):
     return time.strftime("%H:%M:%S", time.localtime(ts))
+
+
+# -------------------- 발언 기록 파일 --------------------
+# 인식한 발언을 날짜별 텍스트 파일에 이어 쓴다. 같은 날 다시 켜도 같은 파일에 붙는다.
+# 구간이 3초씩 겹쳐서 이웃한 줄의 끝·처음 몇 단어가 겹칠 수 있다.
+_log_lock = threading.Lock()
+
+
+def record(line, at=None):
+    at = at or time.time()
+    path = os.path.join(HERE, time.strftime("live_log_%Y-%m-%d.txt", time.localtime(at)))
+    with _log_lock:
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except OSError as e:
+            log(f"⚠️ 기록 파일 쓰기 실패: {e}")
+
+
+def stream_pos(at):
+    """방송 경과 시간(h:mm:ss). 시작 시각을 모르면 빈 문자열."""
+    t0 = stream_meta.get("start")
+    if not t0:
+        return ""
+    sec = max(0, int(at - t0))
+    return f"{sec // 3600}:{sec % 3600 // 60:02d}:{sec % 60:02d}"
+
+
+def record_utterance(text, at):
+    pos = stream_pos(at)
+    record(f"[{hhmmss(at)}{' | 방송 ' + pos if pos else ''}] {text}", at)
 
 
 # -------------------- 알림 전송 --------------------
@@ -151,7 +193,22 @@ INTENT_TAGS = [
     ("지자체", ["지자체", "시청", "구청", "조례", "서울시"]),
 ]
 
+# 감사 종료: '산회'는 그날 회의를 끝낼 때만 쓰고 점심 '정회'와 다르다.
+# 이 말을 들어도 바로 끄지 않는다 — 방송까지 끝난 걸 확인한 뒤에 끈다.
+ADJOURN_RE = re.compile(r"(산회를?\s?선포|산회하겠습니다|국정감사를?\s?모두\s?마치)")
+
 current_call = None                # (이름, 호명 시각, 호명 문장)
+
+
+def watch_session(text):
+    if "정회" in text and "선포" in text:
+        log("⏸ 정회 선포 감지 — 꺼지지 않고 속개를 기다립니다.")
+        record("\n===== ⏸ 정회 선포 =====")
+    if ADJOURN_RE.search(text) and "정회" not in text and not adjourned.is_set():
+        adjourned.set()
+        log("🏁 산회(감사 종료) 선포 감지 — 방송이 끝나면 감시를 마칩니다.")
+        record("\n===== 🏁 산회(감사 종료) 선포 =====")
+        send_slack("🏁 산회(감사 종료) 선포 감지 — 방송 송출이 끝나면 감시를 마칩니다.")
 
 
 def update_speaker(text, start):
@@ -161,6 +218,7 @@ def update_speaker(text, start):
         if name not in NOT_NAMES:
             current_call = (name, start, text)
             log(f"👤 질의 순서 바뀜: {name} 위원")
+            record(f"\n----- 👤 {name} 위원 질의 순서 ({hhmmss(start)}) -----", start)
 
 
 def speaker_line(at):
@@ -190,6 +248,16 @@ def intent_tags(text):
     return [tag for tag, words in INTENT_TAGS if any(w.replace(" ", "") in flat for w in words)]
 
 
+def moment_link(at):
+    """발언 시점으로 가는 유튜브 링크. 시작 시각을 모르면 실시간 링크."""
+    vid, t0 = stream_meta.get("id"), stream_meta.get("start")
+    if not (vid and t0):
+        return YOUTUBE_URL, None
+    offset = max(0, int(at - t0 - LINK_LEAD_SEC))
+    h, rem = divmod(offset, 3600)
+    return f"https://www.youtube.com/watch?v={vid}&t={offset}s", f"{h}:{rem // 60:02d}:{rem % 60:02d}"
+
+
 def format_slack(alert, context):
     flow = "\n".join(f"> `{hhmmss(t)}` {s}" for t, s in context)
     tags = intent_tags(" ".join(s for _, s in context))
@@ -203,9 +271,16 @@ def format_slack(alert, context):
         f"*취지 태그*  {' · '.join(tags) if tags else '해당 없음'}  _(앞뒤 발언 단어 기준 자동 분류)_",
         "*발언 흐름(음성 인식 원문)*",
         flow,
-        f"<{YOUTUBE_URL}|▶ 방송 열기>",
+        link_line(alert),
     ]
     return "\n".join(lines)
+
+
+def link_line(alert):
+    url, pos = alert["link"]
+    if pos:
+        return f"<{url}|▶ 발언 지점부터 보기 ({pos})>  _발언 {LINK_LEAD_SEC}초 전부터 재생_"
+    return f"<{url}|▶ 방송 열기(실시간)>  _시작 시각을 몰라 발언 지점 링크를 못 만듦_"
 
 
 def format_telegram(alert, context):
@@ -218,7 +293,8 @@ def format_telegram(alert, context):
              f"• 취지 태그: {', '.join(tags) if tags else '해당 없음'}",
              "• 발언 흐름:"]
     lines += [f"  {hhmmss(t)} {s}" for t, s in context]
-    lines.append(f"• 방송: {YOUTUBE_URL}")
+    url, pos = alert["link"]
+    lines.append(f"• 방송({pos} 지점): {url}" if pos else f"• 방송(실시간): {url}")
     return "\n".join(lines)
 
 
@@ -252,8 +328,9 @@ def check_keywords(text, start):
     log(f"🚨 키워드 감지: {', '.join(fresh)} — 뒤 발언을 {FOLLOW_CHUNKS}구간 더 듣고 보냅니다")
     log(f"🗣️ {text}")
     print("=" * 50 + "\n", flush=True)
+    record(f"   ↑ 🚨 키워드 감지: {', '.join(fresh)}", start)
     pending.append({"keywords": fresh, "text": text, "start": start,
-                    "speaker": speaker_line(start),
+                    "speaker": speaker_line(start), "link": moment_link(start),
                     "wait": FOLLOW_CHUNKS + 1})   # +1: 감지된 구간 자신도 곧 advance 된다
 
 
@@ -283,10 +360,12 @@ def stt_worker(q):
         try:
             text = r.recognize_google(sr.AudioData(pcm, RATE, WIDTH), language="ko-KR")
             log(text)
+            record_utterance(text, start)
             transcript.append((start, text))
             while transcript and transcript[0][0] < start - 300:
                 transcript.popleft()
             update_speaker(text, start)
+            watch_session(text)
             check_keywords(text, start)
         except sr.UnknownValueError:
             pass                       # 무음이거나 알아듣지 못함
@@ -298,18 +377,47 @@ def stt_worker(q):
 
 
 # -------------------- 스트림 --------------------
-def get_live_audio_url(url):
-    """유튜브 생중계의 스트림 주소(HLS)와 방송 제목을 꺼낸다."""
+class NotLiveNow(Exception):
+    """방송이 지금 송출 중이 아니다(정회로 끊겼거나, 아직 시작 전이거나, 끝났다)."""
+
+
+def get_live_stream(url):
+    """유튜브 생중계의 오디오 주소(HLS)와 방송 정보를 꺼낸다."""
     opts = {"format": "bestaudio/best", "quiet": True, "no_warnings": True}
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
-    if not info.get("is_live"):
-        log("⚠️ 생중계가 아닙니다(다시보기면 처음부터 재생하며 듣습니다).")
-    return info["url"], info.get("title") or ""
+    status = info.get("live_status")
+    if status in ("was_live", "post_live"):
+        # 끝난 생중계를 그대로 열면 다시보기를 처음부터 재생해 오전 발언을 또 알린다.
+        raise NotLiveNow("방송이 끝난 상태(정회로 송출이 멈췄을 수 있음)")
+    if status == "is_upcoming":
+        raise NotLiveNow("방송 시작 전")
+    if status != "is_live":
+        log("⚠️ 생중계가 아닌 일반 영상입니다 — 처음부터 재생하며 듣습니다(시험용).")
+    return info["url"], {
+        "title": info.get("title") or "",
+        "id": info.get("id") or "",
+        # 실제 송출 시작 시각(liveBroadcastDetails.startTimestamp). '방송 열기' 링크를
+        # 발언 시점으로 보내는 데 쓴다.
+        "start": info.get("release_timestamp"),
+    }
+
+
+def keep_awake():
+    """윈도우가 절전으로 들어가 녹음이 멈추는 걸 막는다(정회 중 자리를 비워도)."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+        log("절전 방지: 켜짐(이 창이 떠 있는 동안 PC가 잠들지 않습니다)")
+    except Exception as e:
+        log(f"⚠️ 절전 방지 설정 실패: {e} — 전원 설정에서 절전을 꺼 주세요")
 
 
 def monitor_live_stream():
-    global stream_title
+    global stream_title, stream_meta
     channels = [n for n, ok in (("슬랙", SLACK_WEBHOOK),
                                 ("텔레그램", TELEGRAM_TOKEN and TELEGRAM_CHAT_ID)) if ok]
     log(f"📡 모니터링 시작: {YOUTUBE_URL}")
@@ -317,27 +425,58 @@ def monitor_live_stream():
     if SLACK_WEBHOOK and not SLACK_WEBHOOK.startswith("https://hooks.slack.com/"):
         log(f"⚠️ 슬랙 웹훅 주소 형식이 이상합니다: {SLACK_WEBHOOK[:40]}...")
     log(f"키워드: {', '.join(KEYWORDS)}")
+    log("끝내려면 Ctrl+C. 정회로 방송이 멈춰도 꺼지지 않고 재개를 기다립니다.")
+    keep_awake()
 
     q = queue.Queue(maxsize=20)
     threading.Thread(target=stt_worker, args=(q,), daemon=True).start()
     greeted = False
+    waiting_since = None
 
     while True:                        # 바깥 루프 = 끊겼을 때 재접속
         try:
-            stream_url, stream_title = get_live_audio_url(YOUTUBE_URL)
+            stream_url, stream_meta = get_live_stream(YOUTUBE_URL)
+            stream_title = stream_meta["title"]
+        except NotLiveNow as e:
+            if adjourned.is_set():
+                # 산회가 선포됐고 방송도 끝났다 — 이제 정말 끝이다.
+                log("🏁 산회 선포 후 방송 종료 확인 — 감시를 마칩니다.")
+                record(f"##### 감시 종료 {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                send_slack("🏁 산회 선포 후 방송 종료 — 생중계 감시를 마칩니다.")
+                return
+            if waiting_since is None:
+                waiting_since = time.time()
+                record(f"\n===== ⏸ 방송 송출 멈춤 ({hhmmss(waiting_since)}) =====")
+                log(f"⏸ {e} — 1분마다 재개를 확인합니다.")
+            elif int(time.time() - waiting_since) % 600 < 60:
+                mins = int((time.time() - waiting_since) // 60)
+                log(f"⏸ 재개 대기 중({mins}분째). 오후 방송이 새 주소로 열리면 "
+                    f"Ctrl+C 후 새 주소로 다시 실행하세요.")
+            time.sleep(60)
+            continue
         except Exception as e:
             log(f"스트림 주소 추출 실패: {e} — 30초 후 재시도")
             time.sleep(30)
             continue
+        if waiting_since is not None:
+            log("▶ 방송 재개 — 다시 듣습니다.")
+            record(f"\n===== ▶ 방송 재개 ({hhmmss(time.time())}) =====")
+            waiting_since = None
         if not greeted:
+            record(f"\n\n##### 감시 시작 {time.strftime('%Y-%m-%d %H:%M:%S')} — "
+                   f"{stream_title or YOUTUBE_URL}\n##### {YOUTUBE_URL}")
+            log(f"📝 발언 기록: {os.path.join(HERE, time.strftime('live_log_%Y-%m-%d.txt'))}")
             # 연결 확인용. 이게 안 오면 키워드를 기다릴 필요 없이 알림 설정부터 봐야 한다.
             hello = f"✅ 생중계 키워드 감시 시작 — {stream_title or YOUTUBE_URL}"
             send_slack(hello)
             send_telegram(hello)
             greeted = True
+        if not stream_meta["start"]:
+            log("⚠️ 방송 시작 시각을 몰라 '방송 열기'가 실시간 화면으로 연결됩니다.")
 
         proc = subprocess.Popen(
-            ["ffmpeg", "-loglevel", "error", "-i", stream_url,
+            # -rw_timeout: 정회 화면에서 송출이 멎어 응답이 끊기면 30초 뒤 빠져나와 재접속한다.
+            ["ffmpeg", "-loglevel", "error", "-rw_timeout", "30000000", "-i", stream_url,
              "-f", "s16le", "-ar", str(RATE), "-ac", "1", "-"],
             stdout=subprocess.PIPE)
         buf = b""
@@ -345,7 +484,7 @@ def monitor_live_stream():
             while True:
                 data = proc.stdout.read(BPS)          # 1초씩
                 if not data:
-                    break                             # 방송 종료·주소 만료
+                    break                             # 방송 종료·정회·주소 만료
                 buf += data
                 if len(buf) >= CHUNK_SEC * BPS:
                     start = time.time() - CHUNK_SEC   # 이 구간이 시작된 시각(수신 기준)
