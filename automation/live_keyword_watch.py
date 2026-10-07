@@ -32,6 +32,7 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
   - '방송 열기' 링크는 실시간이 아니라 발언 시점(40초 전)으로 간다.
   - 정회로 방송이 끊겨도 꺼지지 않고 1분마다 재개를 확인한다. 끝난 방송을 다시보기로
     처음부터 재생하지 않는다.
+  - 정회·속개를 채널에 알린다(위원장 선포, 또는 송출이 3분 넘게 멈췄다가 재개).
   - 위원장의 산회(감사 종료) 선포를 듣고, 방송 송출까지 끝나면 스스로 마친다.
     선포만 듣고는 끄지 않는다 — 잘못 알아들었을 때 오후 감사를 놓치지 않기 위해서다.
   - 윈도우에서는 실행 중 PC가 절전으로 들어가지 않게 한다.
@@ -217,10 +218,51 @@ ADJOURN_RE = re.compile(r"(산회를?\s?선포|산회하겠습니다|국정감�
 current_call = None                # (이름, 호명 시각, 호명 문장)
 
 
-def watch_session(text):
-    if "정회" in text and "선포" in text:
-        log("⏸ 정회 선포 감지 — 꺼지지 않고 속개를 기다립니다.")
-        record("\n===== ⏸ 정회 선포 =====")
+# 정회·속개를 채널에 알린다. 같은 상태를 두 번 알리지 않도록 상태가 바뀔 때만 보낸다.
+# 근거는 두 가지다: 위원장의 선포(음성 인식)와 방송 송출 멈춤·재개.
+RECESS_RE = re.compile(r"(정회를?\s?선포|정회하겠습니다|정회하도록\s?하겠습니다)")
+RESUME_RE = re.compile(r"(속개하겠습니다|속개를?\s?선포|(?:회의|감사)를?\s?속개|속개하도록|"
+                       r"개의를?\s?선포|개의하겠습니다)")
+PAUSE_NOTICE_SEC = 180             # 선포 없이 송출이 이만큼 멈추면 정회로 보고 알린다
+session_state = "unknown"          # unknown / 진행 / 정회
+_state_lock = threading.Lock()
+
+
+def set_session(new, reason, at=None):
+    """회의 상태가 바뀌었으면 기록하고 채널에 알린다."""
+    global session_state
+    at = at or time.time()
+    with _state_lock:
+        if session_state == new:
+            return
+        old, session_state = session_state, new
+    if new == "정회":
+        head = f"⏸ *정회* ({hhmmss(at)}경)"
+        tail = "꺼지지 않고 속개를 기다립니다."
+    else:
+        head = f"▶ *{'속개' if old == '정회' else '회의 진행 중'}* ({hhmmss(at)}경)"
+        tail = "다시 듣습니다."
+    log(f"{head.replace('*', '')} — {reason}")
+    record(f"\n===== {head.replace('*', '')} — {reason} =====", at)
+    lines = [head, f"_{reason}_"]
+    if stream_title:
+        lines.append(f"*회의*  {stream_title}")
+    if new == "정회" and current_call:
+        lines.append(f"*정회 직전 질의 순서*  {current_call[0]} 위원")
+    url, pos = moment_link(at)
+    if pos:
+        lines.append(f"<{url}|▶ 해당 지점 보기 ({pos})>")
+    if LOG_LINK:
+        lines.append(f"<{LOG_LINK}|📄 전체 발언 기록 보기>")
+    lines.append(tail)
+    send_slack("\n".join(lines))
+
+
+def watch_session(text, start):
+    if RECESS_RE.search(text):
+        set_session("정회", "위원장 정회 선포", start)
+    elif RESUME_RE.search(text):
+        set_session("진행", "위원장 속개·개의 선포", start)
     if ADJOURN_RE.search(text) and "정회" not in text and not adjourned.is_set():
         adjourned.set()
         log("🏁 산회(감사 종료) 선포 감지 — 방송이 끝나면 감시를 마칩니다.")
@@ -235,6 +277,9 @@ def update_speaker(text, start):
         if name not in NOT_NAMES:
             current_call = (name, start, text)
             log(f"👤 질의 순서 바뀜: {name} 위원")
+            if session_state == "정회":
+                # 속개 선포를 못 알아들었어도 질의가 다시 시작됐으면 회의는 진행 중이다.
+                set_session("진행", f"{name} 위원 질의 호명 감지", start)
             record(f"\n----- 👤 {name} 위원 질의 순서 ({hhmmss(start)}) -----", start)
 
 
@@ -384,7 +429,7 @@ def stt_worker(q):
             while transcript and transcript[0][0] < start - 300:
                 transcript.popleft()
             update_speaker(text, start)
-            watch_session(text)
+            watch_session(text, start)
             check_keywords(text, start)
         except sr.UnknownValueError:
             pass                       # 무음이거나 알아듣지 못함
@@ -469,6 +514,9 @@ def monitor_live_stream():
                 waiting_since = time.time()
                 record(f"\n===== ⏸ 방송 송출 멈춤 ({hhmmss(waiting_since)}) =====")
                 log(f"⏸ {e} — 1분마다 재개를 확인합니다.")
+            elif time.time() - waiting_since >= PAUSE_NOTICE_SEC and session_state != "정회":
+                set_session("정회", f"방송 송출이 {int((time.time() - waiting_since) // 60)}분째 "
+                                   f"멈춤(선포는 못 들었음)", waiting_since)
             elif int(time.time() - waiting_since) % 600 < 60:
                 mins = int((time.time() - waiting_since) // 60)
                 log(f"⏸ 재개 대기 중({mins}분째). 오후 방송이 새 주소로 열리면 "
@@ -483,6 +531,8 @@ def monitor_live_stream():
             log("▶ 방송 재개 — 다시 듣습니다.")
             record(f"\n===== ▶ 방송 재개 ({hhmmss(time.time())}) =====")
             waiting_since = None
+            if session_state == "정회":
+                set_session("진행", "방송 송출 재개")
         if not greeted:
             record(f"\n\n##### 감시 시작 {time.strftime('%Y-%m-%d %H:%M:%S')} — "
                    f"{stream_title or YOUTUBE_URL}\n##### {YOUTUBE_URL}")
