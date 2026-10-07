@@ -192,29 +192,30 @@ def send_telegram(msg):
 # "○○○ 위원님 질의해 주십시오"라고 호명한 뒤 그 위원과 증인이 몇 분간 주고받는
 # 구조라, 마지막 호명을 기억해 두면 '지금 누구의 질의 순서인지'는 꽤 맞힌다.
 
-# 호명: "김철수 위원님 질의해 주시기 바랍니다", "다음은 이영희 위원 보충질의" 등
-CALL_RE = re.compile(r"(?:^|\s)([가-힣]{2,4})\s?위원(?:님)?(?:께서|의)?\s?(?:보충\s?)?(?:질의|질문|발언|주질의)")
-NOT_NAMES = {"다음", "다음은", "존경하는", "여러", "상임", "전문", "소속", "모든", "각", "해당",
-             "그", "이", "저", "우리", "선배", "동료", "여야", "야당", "여당", "민주당", "국민의힘"}
-CALL_STALE_SEC = 15 * 60           # 호명 후 이만큼 지나면 '바뀌었을 수 있음'을 붙인다
-
-# 발언 성격 추정: 문장 끝 어미로 질의/답변을 가른다.
-ANSWER_RE = re.compile(r"(답변\s?드리|말씀\s?드리겠|말씀\s?드립니다|검토하겠습니다|"
-                       r"살펴보겠습니다|조치하겠습니다|노력하겠습니다|그렇습니다|맞습니다)")
-QUESTION_RE = re.compile(r"(습니까|십니까|입니까|겠습니까|나요|어떻게\s?생각|아십니까|않습니까)")
-CHAIR_RE = re.compile(r"(위원장입니다|정회|속개|산회|개의|의사일정|질의해\s?주시기|질의하십시오)")
-
-# 취지 태그: 앞뒤 1분 대화록에 나온 단어로 붙인다. 단어 빈도일 뿐 판단이 아니다.
-INTENT_TAGS = [
-    ("안전·사고", ["사고", "사망", "부상", "안전", "헬멧", "안전모"]),
-    ("단속·처벌", ["단속", "과태료", "처벌", "범칙금", "무면허", "적발"]),
-    ("주차·방치", ["방치", "주차", "견인", "보도", "통행", "불법 주차"]),
-    ("법·제도", ["법안", "개정", "입법", "규제", "면허", "제도", "기준", "시행령", "법률"]),
-    ("대책 촉구", ["대책", "강구", "마련", "촉구", "해야", "필요"]),
-    ("사업자·업계", ["업체", "사업자", "운영사", "대여", "업계", "플랫폼"]),
-    ("청소년", ["청소년", "학생", "미성년", "10대", "중학생", "고등학생"]),
-    ("지자체", ["지자체", "시청", "구청", "조례", "서울시"]),
+# 질의 위원을 알아내는 단서 세 가지(앞에 띄어쓰기나 문장 시작이 있어야 이름으로 본다).
+#  - 위원장 호명: "김철수 위원님 질의해 주십시오", "이영희 위원님 순서입니다", "박민수 위원 하십시오"
+#  - 위원장 예고: "다음은 (○○당) 김철수 위원"
+#  - 위원 자기소개: "국민의힘 김철수 위원입니다", "김철수 의원입니다"
+_NAME = r"(?:^|\s)([가-힣]{2,4})\s?"
+CALL_RES = [
+    re.compile(_NAME + r"위원님?\s?(?:께서\s?)?(?:보충\s?|추가\s?)?"
+               r"(?:질의|질문|발언|순서|하십시오|해\s?주십시오|해\s?주시기|말씀해)"),
+    re.compile(r"다음은?\s?(?:[가-힣]+당\s?)?" + _NAME.replace("(?:^|\\s)", "") + r"위원"),
+    re.compile(_NAME + r"(?:위원|의원)입니다"),
 ]
+NOT_NAMES = {"다음", "다음은", "존경하는", "여러", "상임", "전문", "소속", "모든", "각", "해당",
+             "그", "이", "저", "우리", "선배", "동료", "여야", "야당", "여당", "민주당", "국민의힘",
+             "보충", "추가", "질의", "전체", "간사", "소위", "정부", "관계", "여러분", "위원장"}
+CALL_STALE_SEC = 15 * 60           # 호명 후 이만큼 지나면 '바뀌었을 수 있음'을 붙인다
+STATE_FILE = os.path.join(HERE, "live_state.json")   # 다시 켜도 질의 위원을 이어받는다
+
+# 질의인지 답변인지: 정부·증인을 부르면 위원의 질의, 답변 어투면 정부·증인 쪽.
+ADDRESS_RE = re.compile(r"(장관님|차관님|청장님|사장님|원장님|이사장님|본부장님|실장님|국장님|"
+                        r"회장님|대표님|증인|참고인)")
+QUESTION_RE = re.compile(r"(습니까|십니까|겠습니까|않습니까|아닙니까|어떻게\s?생각|여쭙|묻겠습니다|"
+                         r"답변해\s?주십시오|말씀해\s?주십시오)")
+ANSWER_RE = re.compile(r"(답변\s?드리|말씀\s?드리겠|말씀\s?드립니다|검토하겠습니다|"
+                       r"살펴보겠습니다|조치하겠습니다|노력하겠습니다|위원님\s?말씀)")
 
 # 감사 종료: '산회'는 그날 회의를 끝낼 때만 쓰고 점심 '정회'와 다르다.
 # 이 말을 들어도 바로 끄지 않는다 — 방송까지 끝난 걸 확인한 뒤에 끈다.
@@ -275,44 +276,101 @@ def watch_session(text, start):
         send_slack("🏁 산회(감사 종료) 선포 감지 — 방송 송출이 끝나면 감시를 마칩니다.")
 
 
+def load_speaker_state():
+    """직전 실행에서 알아낸 질의 위원을 이어받는다(정회 중 재실행 대비)."""
+    global current_call
+    try:
+        with open(STATE_FILE, encoding="utf-8") as f:
+            st = json.load(f)
+        if time.time() - st["t"] < CALL_STALE_SEC:
+            current_call = (st["name"], st["t"], "")
+            log(f"👤 직전 실행의 질의 순서를 이어받음: {st['name']} 위원 ({hhmmss(st['t'])})")
+    except (OSError, ValueError, KeyError):
+        pass
+
+
 def update_speaker(text, start):
     global current_call
-    for m in CALL_RE.finditer(text):
-        name = m.group(1)
-        if name not in NOT_NAMES:
+    for rx in CALL_RES:
+        for m in rx.finditer(text):
+            name = m.group(1)
+            if name in NOT_NAMES or (current_call and current_call[0] == name):
+                continue
             current_call = (name, start, text)
             log(f"👤 질의 순서 바뀜: {name} 위원")
+            record(f"\n----- 👤 {name} 위원 질의 순서 ({hhmmss(start)}) -----", start)
+            try:
+                with open(STATE_FILE, "w", encoding="utf-8") as f:
+                    json.dump({"name": name, "t": start}, f, ensure_ascii=False)
+            except OSError:
+                pass
             if session_state == "정회":
                 # 속개 선포를 못 알아들었어도 질의가 다시 시작됐으면 회의는 진행 중이다.
                 set_session("진행", f"{name} 위원 질의 호명 감지", start)
-            record(f"\n----- 👤 {name} 위원 질의 순서 ({hhmmss(start)}) -----", start)
 
 
-def speaker_line(at):
-    if not current_call:
-        return "불명 (감시 시작 후 위원장 호명을 아직 듣지 못함)"
-    name, t, _ = current_call
-    mins = int((at - t) // 60)
-    line = f"{name} 위원 질의 순서 ({hhmmss(t)} 호명)"
-    if at - t > CALL_STALE_SEC:
-        line += f" — 호명 후 {mins}분 지나 바뀌었을 수 있음"
-    return line
+def speaker_line(text, at):
+    """감지 문장의 발언자를 한 줄로. 질의 위원 이름 + 질의/답변 구분."""
+    if current_call:
+        name, t, _ = current_call
+        who = f"{name} 위원"
+        note = f" — {int((at - t) // 60)}분 전 확인, 바뀌었을 수 있음" if at - t > CALL_STALE_SEC else ""
+    else:
+        who, note = "질의 위원(이름 미확인 — 감시 시작 후 호명·자기소개를 못 들음)", ""
+    asks = ADDRESS_RE.search(text) or QUESTION_RE.search(text)
+    if ANSWER_RE.search(text) and not asks:
+        return f"정부·증인 측 답변으로 보임 ({who} 질의에 대한){note}"
+    if asks:
+        return f"{who} (질의 중){note}"
+    return f"{who} 질의 순서 중 (질의·답변 구분 어려움){note}"
 
 
-def kind_of(text):
-    if CHAIR_RE.search(text):
-        return "위원장 진행"
-    a, q = bool(ANSWER_RE.search(text)), bool(QUESTION_RE.search(text))
-    if q and not a:
-        return "위원 질의로 보임"
-    if a and not q:
-        return "정부·증인 답변으로 보임"
-    return "판별 어려움"
+def merge_chunks(texts):
+    """3초씩 겹친 구간 문장을 한 문단으로 잇는다. 겹친 단어는 한 번만 남긴다."""
+    words = []
+    for t in texts:
+        nxt = t.split()
+        if words and nxt:
+            for k in range(min(len(words), len(nxt), 10), 0, -1):
+                tail, head = words[-k:], nxt[:k]
+                if tail == head:
+                    nxt = nxt[k:]
+                    break
+                # 경계에서 잘린 마지막 단어("20" ↔ "2023년")는 다음 구간 쪽을 남긴다.
+                if tail[:-1] == head[:-1] and head[-1].startswith(tail[-1]):
+                    words = words[:-k]
+                    break
+        words += nxt
+    return " ".join(words)
 
 
-def intent_tags(text):
-    flat = text.replace(" ", "")
-    return [tag for tag, words in INTENT_TAGS if any(w.replace(" ", "") in flat for w in words)]
+def highlight(text, terms, mark="*"):
+    """키워드가 든 어절을 굵게. 슬랙은 * 앞뒤가 띄어쓰기여야 굵게 보여서 어절 단위로 감싼다."""
+    spans = []
+    for term in terms:
+        flat = term.replace(" ", "")
+        if not flat:
+            continue
+        rx = re.compile(r"\s?".join(map(re.escape, flat)), re.IGNORECASE)
+        for m in rx.finditer(text):
+            s0 = text.rfind(" ", 0, m.start()) + 1
+            e0 = text.find(" ", m.end())
+            spans.append((s0, len(text) if e0 < 0 else e0))
+    if not spans:
+        return text
+    spans.sort()
+    merged = [list(spans[0])]
+    for s0, e0 in spans[1:]:
+        if s0 <= merged[-1][1] + 1:
+            merged[-1][1] = max(merged[-1][1], e0)
+        else:
+            merged.append([s0, e0])
+    out, pos = [], 0
+    for s0, e0 in merged:
+        out += [text[pos:s0], mark, text[s0:e0], mark]
+        pos = e0
+    out.append(text[pos:])
+    return "".join(out)
 
 
 def moment_link(at):
@@ -326,18 +384,16 @@ def moment_link(at):
 
 
 def format_slack(alert, context):
-    flow = "\n".join(f"> `{hhmmss(t)}` {s}" for t, s in context)
-    tags = intent_tags(" ".join(s for _, s in context))
+    body = highlight(merge_chunks([t for _, t in context]), alert["terms"])
+    span = f"{hhmmss(context[0][0])}~{hhmmss(context[-1][0] + CHUNK_SEC)}" if context else ""
     lines = [f"🚨 *키워드 감지: {', '.join(alert['keywords'])}*"]
     if stream_title:
         lines.append(f"*회의*  {stream_title}")
     lines += [
         f"*발언 시각*  {hhmmss(alert['start'])}경 (PC 수신 기준)",
         f"*발언자(추정)*  {alert['speaker']}",
-        f"*발언 성격(추정)*  {kind_of(alert['text'])}",
-        f"*취지 태그*  {' · '.join(tags) if tags else '해당 없음'}  _(앞뒤 발언 단어 기준 자동 분류)_",
-        "*발언 흐름(음성 인식 원문)*",
-        flow,
+        f"*발언 내용* ({span}, 음성 인식이라 오탈자 있음)",
+        f"> {body}",
         link_line(alert),
     ]
     if LOG_LINK:
@@ -353,17 +409,13 @@ def link_line(alert):
 
 
 def format_telegram(alert, context):
-    tags = intent_tags(" ".join(s for _, s in context))
+    url, pos = alert["link"]
     lines = ["🚨 [키워드 감지 알림]",
              f"• 키워드: {', '.join(alert['keywords'])}",
              f"• 발언 시각: {hhmmss(alert['start'])}경",
              f"• 발언자(추정): {alert['speaker']}",
-             f"• 발언 성격(추정): {kind_of(alert['text'])}",
-             f"• 취지 태그: {', '.join(tags) if tags else '해당 없음'}",
-             "• 발언 흐름:"]
-    lines += [f"  {hhmmss(t)} {s}" for t, s in context]
-    url, pos = alert["link"]
-    lines.append(f"• 방송({pos} 지점): {url}" if pos else f"• 방송(실시간): {url}")
+             f"• 발언 내용: {merge_chunks([t for _, t in context])}",
+             f"• 방송({pos} 지점): {url}" if pos else f"• 방송(실시간): {url}"]
     return "\n".join(lines)
 
 
@@ -538,11 +590,13 @@ def check_keywords(text, start, alternatives=()):
         return
     labels = [k if v is None else f"{k}(다른 인식 후보)" if v == "" else f"{k}(←'{v}')"
               for k, v in fresh]
+    terms = [k for k, _ in fresh] + [v for _, v in fresh if v]
     record(f"   ↑ 🚨 키워드 감지: {', '.join(labels)}", start)
     # 아직 보내지 않은 감지 건이 있으면 거기에 합친다. 겹친 구간에서 같은 말이 두 번
     # 잡히거나, 한 질의에서 연달아 언급될 때 알림이 쏟아지지 않게 한다.
     if pending:
         alert = pending[-1]
+        alert["terms"] += terms
         for lab in labels:
             if lab.split("(")[0] not in [x.split("(")[0] for x in alert["keywords"]]:
                 alert["keywords"].append(lab)
@@ -553,7 +607,10 @@ def check_keywords(text, start, alternatives=()):
     log(f"🗣️ {text}")
     print("=" * 50 + "\n", flush=True)
     pending.append({"keywords": labels, "text": text, "start": start,
-                    "speaker": speaker_line(start), "link": moment_link(start),
+                    # 감지 문장과 바로 앞 문장으로 질의·답변을 가린다.
+                    "terms": terms,
+                    "speaker": speaker_line(" ".join(t for _, t in list(transcript)[-2:]) or text, start),
+                    "link": moment_link(start),
                     "wait": FOLLOW_CHUNKS + 1})   # +1: 감지된 구간 자신도 곧 advance 된다
 
 
@@ -659,6 +716,7 @@ def monitor_live_stream():
     refresh_keywords()
     log(f"키워드: {', '.join(KEYWORDS)}  (live_keywords.txt — 실행 중 고쳐도 반영)")
     log("끝내려면 Ctrl+C. 정회로 방송이 멈춰도 꺼지지 않고 재개를 기다립니다.")
+    load_speaker_state()
     keep_awake()
 
     q = queue.Queue(maxsize=20)
