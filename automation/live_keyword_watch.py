@@ -217,15 +217,23 @@ def send_telegram(msg):
 #  - 위원장 예고: "다음은 (○○당) 김철수 위원"
 #  - 위원 자기소개: "국민의힘 김철수 위원입니다", "김철수 의원입니다"
 _NAME = r"(?:^|\s)([가-힣]{2,4})\s?"
+# 2026-10-07 국토위 실제 기록에서 위원장은 '위원님'과 '의원님'을 섞어 썼고("다음은 장경태
+# 의원님"), 음성 인식은 '질의해'를 '치료해'로 자주 적었다. 자기소개는 "김남근 국회의원입니다".
 CALL_RES = [
-    re.compile(_NAME + r"위원님?\s?(?:께서\s?)?(?:보충\s?|추가\s?)?"
-               r"(?:질의|질문|발언|순서|하십시오|해\s?주십시오|해\s?주시기|말씀해)"),
-    re.compile(r"다음은?\s?(?:[가-힣]+당\s?)?" + _NAME.replace("(?:^|\\s)", "") + r"위원"),
-    re.compile(_NAME + r"(?:위원|의원)입니다"),
+    re.compile(_NAME + r"(?:위원|의원)님?\s?(?:께서\s?)?(?:보충\s?|추가\s?)?"
+               r"(?:질의|질문|발언|순서|하십시오|해\s?주십시오|해\s?주시기|말씀해|치료해)"),
+    re.compile(r"다음은?\s?(?:[가-힣]+당\s?)?" + _NAME.replace("(?:^|\\s)", "") + r"(?:위원|의원)"),
+    re.compile(_NAME + r"(?:국회\s?)?(?:위원|의원)입니다"),
 ]
+CHAIR_CALLS = (0, 1)               # 위원장 호명 패턴 — 이름을 못 알아들어도 순서는 바뀐 것
 NOT_NAMES = {"다음", "다음은", "존경하는", "여러", "상임", "전문", "소속", "모든", "각", "해당",
              "그", "이", "저", "우리", "선배", "동료", "여야", "야당", "여당", "민주당", "국민의힘",
-             "보충", "추가", "질의", "전체", "간사", "소위", "정부", "관계", "여러분", "위원장"}
+             "보충", "추가", "질의", "전체", "간사", "소위", "정부", "관계", "여러분", "위원장",
+             "국회", "남은"}
+# 음성 인식이 이름을 다른 말로 적은 경우("다음 저녁에 위원님 질의해 주시기 바랍니다").
+# 이름으로 쓰지 않되, 위원장 호명이면 질의 순서가 바뀐 건 맞으니 '이름 미확인'으로 바꾼다.
+BAD_NAME_WORDS = {"오늘", "내일", "어제", "오전", "오후", "아침", "점심", "저녁", "지금", "이번", "먼저"}
+BAD_NAME_ENDS = ("에", "께", "에서", "에게", "부터")
 CALL_STALE_SEC = 15 * 60           # 호명 후 이만큼 지나면 '바뀌었을 수 있음'을 붙인다
 STATE_FILE = os.path.join(HERE, "live_state.json")   # 다시 켜도 질의 위원을 이어받는다
 
@@ -239,16 +247,27 @@ ANSWER_RE = re.compile(r"(답변\s?드리|말씀\s?드리겠|말씀\s?드립니�
 
 # 감사 종료: '산회'는 그날 회의를 끝낼 때만 쓰고 점심 '정회'와 다르다.
 # 이 말을 들어도 바로 끄지 않는다 — 방송까지 끝난 걸 확인한 뒤에 끈다.
-ADJOURN_RE = re.compile(r"(산회를?\s?선포|산회하겠습니다|국정감사를?\s?모두\s?마치)")
+# 국정감사에서는 '감사종료를 선포'도 쓴다. '모두 마치고 …'처럼 이어지는 말은 끝이 아니라서
+# '마치겠습니다'까지 들어야 한다.
+ADJOURN_RE = re.compile(r"(산회를?\s?선포|산회하겠습니다|국정감사를?\s?모두\s?마치겠습니다|"
+                        r"감사\s?종료를?\s?선포)")
 
 current_call = None                # (이름, 호명 시각, 호명 문장)
 
 
 # 정회·속개를 채널에 알린다. 같은 상태를 두 번 알리지 않도록 상태가 바뀔 때만 보낸다.
 # 근거는 두 가지다: 위원장의 선포(음성 인식)와 방송 송출 멈춤·재개.
-RECESS_RE = re.compile(r"(정회를?\s?선포|정회하겠습니다|정회하도록\s?하겠습니다)")
+# 상임위는 '정회/속개'를, 국정감사는 '감사중지/감사를 계속'을 쓴다(2026-10-07 국토위 실제
+# 기록: "잠시 감사를 중지했다가 … 국정감사 중지를 선포합니다" → 음성 인식은 '중기'로 적었다,
+# "국정감사를 계속하도록 하겠습니다"). 정회 중에도 방송 송출은 계속돼서 말로만 알 수 있다.
+RECESS_RE = re.compile(r"(정회를?\s?선포|정회하겠습니다|정회하도록\s?하겠습니다|"
+                       r"감사\s?중[지기]를?\s?선포|중지를?\s?선포|"
+                       r"감사를?\s?(?:잠시\s?)?(?:중지|중단)(?:하겠|하도록|했다가|하고))")
 RESUME_RE = re.compile(r"(속개하겠습니다|속개를?\s?선포|(?:회의|감사)를?\s?속개|속개하도록|"
-                       r"개의를?\s?선포|개의하겠습니다)")
+                       r"개의를?\s?선포|개의하겠습니다|감사를?\s?계속(?:하도록\s?하|하)겠습니다|"
+                       r"감사를?\s?재개|질의를?\s?계속하겠습니다)")
+# "오후 5시 20분에 감사를 계속하도록 하겠습니다"는 정회 안내다 — 재개로 보면 안 된다.
+FUTURE_TIME_RE = re.compile(r"(?:\d+|[한두세네다섯여섯일곱여덟아홉열]+)\s?시\s?(?:\d+\s?분|반)?\s?(?:부터|에)")
 PAUSE_NOTICE_SEC = 180             # 선포 없이 송출이 이만큼 멈추면 정회로 보고 알린다
 session_state = "unknown"          # unknown / 진행 / 정회
 _state_lock = threading.Lock()
@@ -274,7 +293,7 @@ def set_session(new, reason, at=None, meta=None):
     title = (meta or stream_meta).get("title") or stream_title
     if title:
         lines.append(f"*회의*  {title}")
-    if new == "정회" and current_call:
+    if new == "정회" and current_call and current_call[0]:
         lines.append(f"*정회 직전 질의 순서*  {current_call[0]} 위원")
     url, pos = moment_link(at, meta)
     if pos:
@@ -295,11 +314,12 @@ def watch_session(text, start, cgen, meta=None):
     global adjourned_gen
     if not is_current(cgen):
         return                         # 이전 방송의 정회·산회가 새 방송 상태를 바꾸면 안 된다
-    if RECESS_RE.search(text):
-        set_session("정회", "위원장 정회 선포", start, meta)
-    elif RESUME_RE.search(text):
-        set_session("진행", "위원장 속개·개의 선포", start, meta)
-    if ADJOURN_RE.search(text) and "정회" not in text and adjourned_gen != cgen:
+    recess = RECESS_RE.search(text)
+    if recess:
+        set_session("정회", f"위원장 선포: “{recess.group(0)}”", start, meta)
+    elif RESUME_RE.search(text) and not FUTURE_TIME_RE.search(text):
+        set_session("진행", f"위원장 선포: “{RESUME_RE.search(text).group(0)}”", start, meta)
+    if ADJOURN_RE.search(text) and not recess and "정회" not in text and adjourned_gen != cgen:
         adjourned_gen = cgen
         log("🏁 산회(감사 종료) 선포 감지 — 방송이 끝나면 감시를 마칩니다.")
         record("\n===== 🏁 산회(감사 종료) 선포 =====")
@@ -314,7 +334,8 @@ def load_speaker_state():
             st = json.load(f)
         if time.time() - st["t"] < CALL_STALE_SEC:
             current_call = (st["name"], st["t"], "")
-            log(f"👤 직전 실행의 질의 순서를 이어받음: {st['name']} 위원 ({hhmmss(st['t'])})")
+            log(f"👤 직전 실행의 질의 순서를 이어받음: {st['name'] or '이름 미확인'} 위원 "
+                f"({hhmmss(st['t'])})")
     except (OSError, ValueError, KeyError):
         pass
 
@@ -323,14 +344,27 @@ def update_speaker(text, start, cgen):
     global current_call
     if not is_current(cgen):
         return
-    for rx in CALL_RES:
+    for i, rx in enumerate(CALL_RES):
         for m in rx.finditer(text):
             name = m.group(1)
-            if name in NOT_NAMES or (current_call and current_call[0] == name):
+            if name in NOT_NAMES:
                 continue
+            if name in BAD_NAME_WORDS or name.endswith(BAD_NAME_ENDS):
+                if i not in CHAIR_CALLS:   # 위원장 호명일 때만 순서가 바뀐 걸로 본다
+                    continue
+                name = ""                  # 이름 미확인
+            if current_call and current_call[0] == name and (name or start - current_call[1] < 20):
+                if name:                   # 같은 위원을 다시 들었다 — 마지막 확인 시각만 갱신
+                    current_call = (name, start, text)
+                continue                   # 같은 위원, 또는 겹친 구간에서 같은 호명을 다시 들음
+            if (current_call and name and current_call[0] and start - current_call[1] < 30
+                    and _edit_distance(to_jamo(name)[0], to_jamo(current_call[0])[0], 2) <= 2):
+                continue                   # 방금 호명된 이름을 겹친 구간에서 비슷하게 잘못 들음
+                                           # ("장종태 의원입니다" → 다음 구간 "장경태 의원입니다")
             current_call = (name, start, text)
-            log(f"👤 질의 순서 바뀜: {name} 위원")
-            record(f"\n----- 👤 {name} 위원 질의 순서 ({hhmmss(start)}) -----", start)
+            label = f"{name} 위원" if name else "다음 위원(이름을 알아듣지 못함)"
+            log(f"👤 질의 순서 바뀜: {label}")
+            record(f"\n----- 👤 {label} 질의 순서 ({hhmmss(start)}) -----", start)
             try:
                 with open(STATE_FILE, "w", encoding="utf-8") as f:
                     json.dump({"name": name, "t": start}, f, ensure_ascii=False)
@@ -338,14 +372,14 @@ def update_speaker(text, start, cgen):
                 pass
             if session_state == "정회":
                 # 속개 선포를 못 알아들었어도 질의가 다시 시작됐으면 회의는 진행 중이다.
-                set_session("진행", f"{name} 위원 질의 호명 감지", start)
+                set_session("진행", f"{label} 질의 호명 감지", start)
 
 
 def speaker_line(text, at):
     """감지 문장의 발언자를 한 줄로. 질의 위원 이름 + 질의/답변 구분."""
     if current_call:
         name, t, _ = current_call
-        who = f"{name} 위원"
+        who = f"{name} 위원" if name else "질의 위원(위원장 호명을 알아듣지 못함)"
         note = f" — {int((at - t) // 60)}분 전 확인, 바뀌었을 수 있음" if at - t > CALL_STALE_SEC else ""
     else:
         who, note = "질의 위원(이름 미확인 — 감시 시작 후 호명·자기소개를 못 들음)", ""
@@ -824,14 +858,14 @@ def remote_poller(last_sha, last_text, apply_first):
             fail_since = None
         if kind == "same":
             continue
-        last_sha = sha
         if kind in ("nofile", "nobranch"):
+            # 커밋 번호를 기억하지 않는다 — 올린 직후 raw 가 잠깐 404 를 낼 수 있어서 다음에 다시 읽는다.
             if not missing_logged:
                 log(f"⚠️ 원격 지정 파일을 찾을 수 없습니다({REMOTE_BRANCH}:{REMOTE_PATH}) — "
-                    f"생기면 그 내용을 따릅니다.")
+                    f"계속 확인합니다.")
                 missing_logged = True
-            apply_first = True
             continue
+        last_sha = sha
         missing_logged = False
         if last_text is None and not apply_first:
             last_text = text               # 시작 때 못 읽었으면 첫 내용은 기준으로만 삼는다
@@ -885,14 +919,14 @@ def put_control(q, item):
             q.put(item, timeout=5)
             return
         except queue.Full:
-            try:
-                old = q.get_nowait()
-                if isinstance(old, str) and old == "reset":
-                    item = "reset"     # 'reset' 은 버리면 안 된다 — 알림 내보내기도 겸한다
-                else:
-                    log("⚠️ 인식이 밀려 오래된 구간 하나를 버림")
-            except queue.Empty:
-                pass
+            # 제어 신호는 순서가 중요해서 건드리지 않고, 가장 오래된 음성 구간만 버린다.
+            with q.mutex:
+                for i, old in enumerate(q.queue):
+                    if isinstance(old, tuple):
+                        del q.queue[i]
+                        q.not_full.notify()
+                        break
+            log("⚠️ 인식이 밀려 오래된 구간 하나를 버림")
     log("⚠️ 인식 스레드가 응답하지 않습니다 — 제어 신호를 건너뜁니다.")
 
 
@@ -1033,13 +1067,12 @@ def monitor_live_stream(cli_url=None):
         with _target_lock:
             if target["gen"] != gen:       # 주소를 꺼내는 사이 대상이 또 바뀌었다
                 continue
-        if greeted and active_vid and meta["id"] and meta["id"] != active_vid:
-            # 같은 주소인데 다른 영상이 열렸다 — 다른 방송으로 갈아탄 것과 똑같이 다룬다.
+        if active_vid and meta["id"] and meta["id"] != active_vid:
+            # 같은 주소인데 다른 영상이 열렸다 — 다른 방송으로 갈아탄 것과 똑같이 다룬다
+            # (새 세대 번호를 받아야 이전 영상의 산회·정회가 따라오지 않는다).
             log(f"🔄 같은 주소에서 다른 방송이 열림({active_vid} → {meta['id']})")
-            put_control(q, "reset")
-            with _state_lock:
-                session_state = "unknown"
-            greeted, waiting_since = False, None
+            set_target(url, "같은 주소의 새 방송")
+            continue
         active_vid = meta["id"] or active_vid
         stream_meta, stream_title = dict(meta, url=url), meta["title"]
         fail_notified = False
