@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 live_webhook.txt
 live_log_*.txt
+logs/
+live_log_link.txt

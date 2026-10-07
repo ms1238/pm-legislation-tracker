@@ -35,7 +35,7 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
   - 위원장의 산회(감사 종료) 선포를 듣고, 방송 송출까지 끝나면 스스로 마친다.
     선포만 듣고는 끄지 않는다 — 잘못 알아들었을 때 오후 감사를 놓치지 않기 위해서다.
   - 윈도우에서는 실행 중 PC가 절전으로 들어가지 않게 한다.
-  - 인식한 발언 전부를 스크립트 옆 live_log_날짜.txt 에 시각·방송 경과 시간과 함께
+  - 인식한 발언 전부를 스크립트 옆 logs/live_log_날짜.txt 에 시각·방송 경과 시간과 함께
     남긴다. 질의 순서, 키워드 감지, 정회·재개·산회도 표시된다.
 """
 import collections, json, os, queue, re, subprocess, sys, threading, time, urllib.error, urllib.request
@@ -78,6 +78,12 @@ def load_secret(env_name, filename, legacy_env=None):
     return "", ""
 
 
+# 발언 기록은 logs 폴더에 따로 둔다. 이 폴더만 OneDrive 등으로 공유하면 웹훅 주소가
+# 든 live_webhook.txt 를 함께 노출하지 않는다. 그 공유 링크를 live_log_link.txt 에 넣어
+# 두면 슬랙 알림마다 '전체 발언 기록 보기' 링크가 붙는다.
+LOG_DIR = os.path.join(HERE, "logs")
+LOG_LINK, _ = load_secret("LIVE_LOG_LINK", "live_log_link.txt")
+
 SLACK_WEBHOOK, SLACK_WEBHOOK_SRC = load_secret("SLACK_LIVE_WEBHOOK_URL", "live_webhook.txt",
                                                legacy_env="SLACK_PERSONAL_WEBHOOK_URL")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
@@ -107,9 +113,10 @@ _log_lock = threading.Lock()
 
 def record(line, at=None):
     at = at or time.time()
-    path = os.path.join(HERE, time.strftime("live_log_%Y-%m-%d.txt", time.localtime(at)))
+    path = os.path.join(LOG_DIR, time.strftime("live_log_%Y-%m-%d.txt", time.localtime(at)))
     with _log_lock:
         try:
+            os.makedirs(LOG_DIR, exist_ok=True)
             with open(path, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
         except OSError as e:
@@ -277,6 +284,8 @@ def format_slack(alert, context):
         flow,
         link_line(alert),
     ]
+    if LOG_LINK:
+        lines.append(f"<{LOG_LINK}|📄 전체 발언 기록 보기>")
     return "\n".join(lines)
 
 
@@ -471,9 +480,12 @@ def monitor_live_stream():
         if not greeted:
             record(f"\n\n##### 감시 시작 {time.strftime('%Y-%m-%d %H:%M:%S')} — "
                    f"{stream_title or YOUTUBE_URL}\n##### {YOUTUBE_URL}")
-            log(f"📝 발언 기록: {os.path.join(HERE, time.strftime('live_log_%Y-%m-%d.txt'))}")
+            log(f"📝 발언 기록: {os.path.join(LOG_DIR, time.strftime('live_log_%Y-%m-%d.txt'))}")
+            log(f"기록 공유 링크: {'있음 — 알림에 붙습니다' if LOG_LINK else '없음(live_log_link.txt)'}")
             # 연결 확인용. 이게 안 오면 키워드를 기다릴 필요 없이 알림 설정부터 봐야 한다.
             hello = f"✅ 생중계 키워드 감시 시작 — {stream_title or YOUTUBE_URL}"
+            if LOG_LINK:
+                hello += f"\n<{LOG_LINK}|📄 전체 발언 기록 보기>"
             send_slack(hello)
             send_telegram(hello)
             greeted = True
