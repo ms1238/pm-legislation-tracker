@@ -73,15 +73,21 @@ def load_secret(env_name, filename, legacy_env=None):
             return os.environ[name].strip(), f"환경변수 {name}"
     path = os.path.join(HERE, filename)
     if os.path.exists(path):
-        with open(path, encoding="utf-8-sig") as f:      # 메모장이 붙이는 BOM 제거
-            return f.read().strip().strip('"').strip("'"), filename
+        raw = open(path, "rb").read()
+        try:
+            text = raw.decode("utf-8-sig")               # 메모장·PowerShell 이 붙이는 BOM 제거
+        except UnicodeDecodeError:
+            text = raw.decode("cp949")                   # 윈도우 PowerShell 5 Set-Content 기본값
+        return text.strip().strip('"').strip("'"), filename
     return "", ""
 
 
 # 발언 기록은 logs 폴더에 따로 둔다. 이 폴더만 OneDrive 등으로 공유하면 웹훅 주소가
 # 든 live_webhook.txt 를 함께 노출하지 않는다. 그 공유 링크를 live_log_link.txt 에 넣어
 # 두면 슬랙 알림마다 '전체 발언 기록 보기' 링크가 붙는다.
-LOG_DIR = os.path.join(HERE, "logs")
+# 다른 곳(예: 구글 드라이브 데스크톱의 G:\내 드라이브\국감기록)에 쓰려면 그 경로를
+# live_log_dir.txt 에 한 줄로 넣는다. 드라이브 앱이 알아서 올린다.
+LOG_DIR = load_secret("LIVE_LOG_DIR", "live_log_dir.txt")[0] or os.path.join(HERE, "logs")
 LOG_LINK, _ = load_secret("LIVE_LOG_LINK", "live_log_link.txt")
 
 SLACK_WEBHOOK, SLACK_WEBHOOK_SRC = load_secret("SLACK_LIVE_WEBHOOK_URL", "live_webhook.txt",
