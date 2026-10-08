@@ -1045,6 +1045,13 @@ def monitor_live_stream(cli_url=None):
                 if greeted:
                     record(f"\n===== ⏸ 방송 송출 멈춤 ({hhmmss(waiting_since)}) =====")
                 log(f"⏸ {e} — 1분마다 다시 확인합니다.")
+                if not greeted and not fail_notified:
+                    # 켜자마자(또는 갈아타자마자) 대상이 송출 중이 아니면 슬랙이 조용해서
+                    # 켜졌는지조차 알 수 없다 — 한 번은 알린다.
+                    send_slack(f"⏳ *감시 대기* — 지정된 방송이 지금 송출 중이 아닙니다({e}).\n"
+                               f"`{url}`\n방송이 시작되면 자동으로 듣고, 새 링크를 원격 지정하면 "
+                               f"바로 갈아탑니다.")
+                    fail_notified = True
             elif (greeted and time.time() - waiting_since >= PAUSE_NOTICE_SEC
                   and session_state != "정회"):
                 set_session("정회", f"방송 송출이 {int((time.time() - waiting_since) // 60)}분째 "
