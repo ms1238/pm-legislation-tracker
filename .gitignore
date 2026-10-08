@@ -8,3 +8,8 @@ live_log_dir.txt
 live_keywords.txt
 live_state.json
 live_remote.txt
+live_watch_members.txt
+live_members.txt
+live_roster_cache.json
+live_state*.json
+*.bak
