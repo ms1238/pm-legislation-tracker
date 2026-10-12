@@ -24,7 +24,9 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
 끄려면 live_remote.txt 에 off 를 적는다.
 
 구조: 처음 켠 프로그램(관리)은 원격 지정을 보며 방송마다 감시 프로그램(--child)을 하나씩 띄우고,
-꺼지면 다시 켜고, 주소가 바뀌면 바꿔 켠다. 감시 프로그램 하나가 방송 하나를 맡는다.
+꺼지면 다시 켜고, 줄이 바뀐 방송만 바꿔 켠다. 감시 프로그램 하나가 방송 하나를 맡고, 기록·요약
+파일도 방송 이름별로 따로 쓴다(live_log_날짜_국토위.txt). 같은 폴더에서 두 번 켜면 두 번째는
+바로 끝난다(알림 중복 방지).
 
 스크립트 옆 파일(.gitignore 처리됨, 같은 이름의 환경변수가 있으면 그쪽이 먼저):
     live_webhook.txt        슬랙 웹훅 주소(SLACK_LIVE_WEBHOOK_URL)
@@ -48,14 +50,15 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
   - 오래 인식이 없거나 음성 인식 오류가 이어지면 알리고, 매시간 상태를 보고한다.
   - 마감 요약(질의 순서·키워드 알림·정회)을 슬랙과 logs/live_summary_날짜.md 로 보낸다.
   - 인식한 발언 전부를 logs/live_log_날짜.txt 에 시각·방송 경과 시간과 함께 남긴다.
-  - 저장소에 새 버전이 올라오면 알린다. 윈도우에서는 실행 중 PC가 절전으로 들어가지 않게 한다.
+  - 저장소에 새 버전이 올라오면 알린다. 윈도우에서는 실행 중 PC가 절전으로 들어가지 않게 하고,
+    창을 마우스로 눌러도 멈추지 않게 '빠른 편집 모드'를 끈다.
 """
 import collections, json, os, queue, re, subprocess, sys, threading, time, traceback, urllib.error, urllib.parse, urllib.request
 
 import speech_recognition as sr
 import yt_dlp
 
-VERSION = "2026.10.08-1"            # 슬랙 시작 메시지와 새 버전 알림에 쓴다
+VERSION = "2026.10.12-1"            # 슬랙 시작 메시지와 새 버전 알림에 쓴다
 
 # ==================== [ 설정 ] ====================
 YOUTUBE_URL = "https://www.youtube.com/watch?v=nCAVxaqGiVM"   # 원격 지정도 명령줄 주소도 없을 때
@@ -65,7 +68,7 @@ YOUTUBE_URL = "https://www.youtube.com/watch?v=nCAVxaqGiVM"   # 원격 지정도
 # raw 주소는 5분 동안 캐시된다. 그래서 git 프로토콜로 브랜치의 최신 커밋 번호만 묻고
 # (호출 한도 없음, 1~2KB), 번호가 바뀌었을 때만 그 커밋에 고정된 raw 주소로 파일을 읽는다.
 REMOTE_REPO = "ms1238/pm-legislation-tracker"
-REMOTE_BRANCH = "claude/compassionate-hypatia-3an51t"
+REMOTE_BRANCH = "master"
 REMOTE_PATH = "automation/live_target.txt"
 REMOTE_POLL_SEC = 30
 
@@ -89,6 +92,7 @@ LINK_LEAD_SEC = 40                 # '방송 열기'를 발언보다 이만큼 �
                                    # 유튜브 생중계 지연(10~30초)과 앞 맥락을 덮는다.
 SILENT_ALERT_SEC = 10 * 60         # 회의 진행 중인데 이만큼 인식된 발언이 없으면 경고
 STT_ERROR_ALERT = 5                # 음성 인식 오류가 이만큼 연달아 나면 경고
+STALL_KILL_SEC = 120               # 방송 소리가 이만큼 안 들어오면(접속 멈춤) 끊고 다시 붙는다
 HEARTBEAT_MIN = 60                 # 상태 보고 주기(분). 0 이면 끈다
 FOLLOW_SEARCH_SEC = 120            # 방송이 끝났을 때 같은 회의의 다음 방송(2부)을 찾는 주기
 RESUME_GRACE_SEC = 10 * 60         # 예고된 재개 시각에서 이만큼 지나도 못 들으면 경고
@@ -142,8 +146,14 @@ adjourned_gen = None               # 산회·감사 종료 선포를 들은 감�
 SLOT_LABEL = ""
 
 
+def clean_label(label):
+    """방송 이름에서 파일 이름에 쓸 수 있는 글자(한글·영문·숫자·_-)만 남긴다(최대 20자)."""
+    return re.sub(r"[^0-9A-Za-z가-힣_-]+", "", label or "")[:20]
+
+
 def label_suffix():
-    return f"_{re.sub(r'[^0-9A-Za-z가-힣]+', '', SLOT_LABEL)}" if SLOT_LABEL else ""
+    lab = clean_label(SLOT_LABEL)
+    return f"_{lab}" if lab else ""
 
 
 def log(msg):
@@ -232,7 +242,7 @@ def send_telegram(msg):
 _ev_lock = threading.Lock()
 events = []                        # 지금 회의(1부·2부 포함)에서 일어난 일 — 마감 보고서 재료
 stats = {"chunks": 0, "texts": 0, "stt_errors": 0, "consec_err": 0, "alerts": 0,
-         "suppressed": 0, "last_text": None, "listen_since": None}
+         "suppressed": 0, "last_text": None, "listen_since": None, "last_bytes": None}
 
 
 def add_event(kind, t, **kw):
@@ -265,11 +275,13 @@ _watch_mtime = None
 
 
 def _read_text(path):
-    raw = open(path, "rb").read()
+    """메모장 저장 방식(UTF-8·ANSI)과 상관없이 읽는다. 깨진 글자는 ? 로 두고 멈추지 않는다."""
+    with open(path, "rb") as f:
+        raw = f.read()
     try:
         return raw.decode("utf-8-sig")
     except UnicodeDecodeError:
-        return raw.decode("cp949")
+        return raw.decode("cp949", errors="replace")
 
 
 def load_roster():
@@ -287,12 +299,15 @@ def load_roster():
         except (OSError, ValueError):
             log(f"⚠️ 위원 명단을 받지 못함 — 이름 보정 없이 갑니다({short_error(e)})")
     new = {n: (v.get("committee") or "") for n, v in data.items() if isinstance(v, dict)}
-    if os.path.exists(EXTRA_MEMBERS_FILE):
-        for ln in _read_text(EXTRA_MEMBERS_FILE).splitlines():
-            ln = ln.split("#", 1)[0].strip()
-            if ln:
-                name, _, comm = ln.partition(" ")
-                new.setdefault(name, comm.strip())
+    try:
+        if os.path.exists(EXTRA_MEMBERS_FILE):
+            for ln in _read_text(EXTRA_MEMBERS_FILE).splitlines():
+                ln = ln.split("#", 1)[0].strip()
+                if ln:
+                    name, _, comm = ln.partition(" ")
+                    new.setdefault(name, comm.strip())
+    except OSError as e:
+        log(f"⚠️ 추가 위원 파일을 읽지 못함: {e}")
     roster = new
     log(f"위원 명단: {len(roster)}명 (이름 보정에 씀)")
 
@@ -480,12 +495,15 @@ def watch_session(text, start, cgen, meta=None):
         send_slack("🏁 산회(감사 종료) 선포 감지 — 방송 송출이 끝나면 감시를 마칩니다.")
 
 
-def load_speaker_state():
-    """직전 실행에서 알아낸 질의 위원을 이어받는다(정회 중 재실행 대비)."""
+def load_speaker_state(url=None):
+    """직전 실행에서 알아낸 질의 위원을 이어받는다(정회 중 재실행 대비). 같은 방송일 때만."""
     global current_call
     try:
         with open(state_file(), encoding="utf-8") as f:
             st = json.load(f)
+        vid = video_key(url) if url else ""
+        if st.get("vid") and vid and st["vid"] != vid:
+            return                     # 같은 이름으로 다른 방송을 듣던 때의 기록
         if time.time() - st["t"] < CALL_STALE_SEC:
             current_call = (st["name"], st["t"], "")
             log(f"👤 직전 실행의 질의 순서를 이어받음: {st['name'] or '이름 미확인'} 위원 "
@@ -538,7 +556,8 @@ def update_speaker(text, start, cgen, meta=None):
                     f"<{LOG_LINK}|📄 전체 발언 기록 보기>" if LOG_LINK else ""])))
             try:
                 with open(state_file(), "w", encoding="utf-8") as f:
-                    json.dump({"name": name, "t": start}, f, ensure_ascii=False)
+                    json.dump({"name": name, "t": start, "vid": (meta or {}).get("id") or ""},
+                              f, ensure_ascii=False)
             except OSError:
                 pass
             if session_state == "정회":
@@ -677,6 +696,10 @@ def rule_passes(keyword, variant, ctx):
     return True
 
 
+_send_lock = threading.Lock()
+_send_threads = []                 # 보내는 중인 알림 — 끝내기 전에 기다린다
+
+
 def dispatch(alert):
     """앞뒤 발언을 붙여 보낸다. 전송이 느려도 인식이 멈추지 않게 별도 스레드에서 돈다."""
     context = [(t, s) for t, s in list(transcript)
@@ -701,7 +724,10 @@ def dispatch(alert):
         send_slack(format_slack(alert, context))
         send_telegram(format_telegram(alert, context))
 
-    threading.Thread(target=run, daemon=True).start()
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    with _send_lock:
+        _send_threads[:] = [x for x in _send_threads if x.is_alive()] + [t]
 
 
 # -------------------- 감지 --------------------
@@ -840,11 +866,7 @@ def refresh_keywords():
         mtime = os.path.getmtime(KEYWORDS_FILE)
         if mtime == _kw_mtime:
             return
-        raw = open(KEYWORDS_FILE, "rb").read()
-        try:
-            text = raw.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            text = raw.decode("cp949")
+        text = _read_text(KEYWORDS_FILE)
         words, aliases, rules = [], {}, {}
         for ln in text.splitlines():
             ln = ln.split("#", 1)[0].strip()
@@ -951,6 +973,13 @@ def reset_broadcast_state():
         pass
 
 
+def _safe(what, fn, *args):
+    try:
+        fn(*args)
+    except Exception as e:         # 인식 스레드가 죽으면 조용히 감시가 멈추므로 단계별로 잡는다
+        log(f"⚠️ {what} 중 오류: {short_error(e)}")
+
+
 def stt_worker(q):
     r = sr.Recognizer()
     # 인식 요청이 응답 없이 멈추면 스레드가 영영 서 버린다(기본값은 시간 제한 없음).
@@ -958,49 +987,50 @@ def stt_worker(q):
     while True:
         item = q.get()
         if item is None:               # 스트림 끊김 신호
-            flush_pending()
+            _safe("알림 내보내기", flush_pending)
             continue
         if isinstance(item, dict):     # 제어 신호 — 음성 구간보다 늦게 처리돼야 순서가 맞는다
-            flush_pending()
+            _safe("알림 내보내기", flush_pending)
             if "reset" in item:        # 감시 대상이 바뀌었다 — 이전 방송 요약을 보내고 흔적을 지운다
-                send_summary(item.get("reason", "감시 대상 변경"), item.get("meta"))
-                reset_broadcast_state()
+                _safe("요약 보내기", send_summary, item.get("reason", "감시 대상 변경"), item.get("meta"))
+                _safe("방송 상태 비우기", reset_broadcast_state)
             if item.get("final"):      # 끝내기 직전 — 기다리던 알림을 모두 내보냈다고 알린다
                 final_done.set()
             continue
         pcm, start, cgen, cmeta = item   # 어느 감시 대상·방송의 구간인지 함께 다닌다
         stats["chunks"] += 1
+        text, others = None, []
         try:
             # show_all: 1순위 문장 말고 다른 인식 후보도 받아 키워드를 찾는다.
             res = r.recognize_google(sr.AudioData(pcm, RATE, WIDTH), language="ko-KR",
                                      show_all=True)
             alts = [a["transcript"] for a in (res or {}).get("alternative", [])
                     if isinstance(a, dict) and a.get("transcript")] if isinstance(res, dict) else []
-            if not alts:
-                raise sr.UnknownValueError()
-            text, others = alts[0], alts[1:]
-            stats["texts"] += 1
-            stats["last_text"] = time.time()
-            stats["consec_err"] = 0
-            log(text)
-            record_utterance(text, start, cmeta)
-            transcript.append((start, text))
-            while transcript and transcript[0][0] < start - 300:
-                transcript.popleft()
-            update_speaker(text, start, cgen, cmeta)
-            watch_session(text, start, cgen, cmeta)
-            check_keywords(text, start, others, cmeta)
+            if alts:
+                text, others = alts[0], alts[1:]
+                stats["texts"] += 1
+                stats["last_text"] = time.time()
+            stats["consec_err"] = 0    # 무음이거나 알아듣지 못해도 서비스는 응답했다
         except sr.UnknownValueError:
-            stats["consec_err"] = 0    # 무음이거나 알아듣지 못함 — 서비스는 응답했다
+            stats["consec_err"] = 0
         except sr.RequestError as e:
             stats["stt_errors"] += 1
             stats["consec_err"] += 1
             log(f"STT 오류: {e}")
-        except Exception as e:         # 스레드가 죽으면 조용히 인식이 멈추므로 다 잡는다
+        except Exception as e:
             stats["stt_errors"] += 1
             stats["consec_err"] += 1
-            log(f"인식 중 오류: {e}")
-        advance_pending()
+            log(f"인식 중 오류: {short_error(e)}")
+        if text:
+            log(text)
+            transcript.append((start, text))
+            while transcript and transcript[0][0] < start - 300:
+                transcript.popleft()
+            _safe("발언 기록", record_utterance, text, start, cmeta)
+            _safe("발언자 파악", update_speaker, text, start, cgen, cmeta)
+            _safe("회의 상태 파악", watch_session, text, start, cgen, cmeta)
+            _safe("키워드 확인", check_keywords, text, start, others, cmeta)
+        _safe("알림 처리", advance_pending)
 
 
 # -------------------- 감시 대상(방송 하나 안에서) --------------------
@@ -1017,6 +1047,13 @@ YOUTUBE_RE = re.compile(r"^https?://(?:www\.|m\.)?(?:youtube\.com|youtu\.be)/\S+
 CHANNEL_RE = re.compile(r"youtube\.com/(?:@[^/?#]+|channel/[^/?#]+|c/[^/?#]+|user/[^/?#]+)"
                         r"(?:/[^?#]*)?(?:[?#].*)?$", re.IGNORECASE)
 STOP_WORDS = {"stop", "중지", "멈춤", "정지"}
+VID_RE = re.compile(r"(?:[?&]v=|youtu\.be/|/live/|/shorts/|/embed/)([0-9A-Za-z_-]{11})")
+
+
+def video_key(url):
+    """주소 → 영상 id(같은 방송을 다른 형식으로 적어도 같게 본다). 못 찾으면 주소 그대로."""
+    m = VID_RE.search(url or "")
+    return m.group(1) if m else (url or "").strip().rstrip("/")
 
 
 def set_target(url, src, keep=False):
@@ -1359,8 +1396,15 @@ def health_watchdog():
         try:
             now = time.time()
             with _target_lock:
-                listening = current_proc is not None and current_proc.poll() is None
+                proc = current_proc
+                listening = proc is not None and proc.poll() is None
                 gen = target["gen"]
+            if listening and now - (stats["last_bytes"] or now) >= STALL_KILL_SEC:
+                # ffmpeg 이 살아 있는데 소리가 안 들어온다(접속이 반쯤 끊긴 채 멈춤) — 끊고 다시 붙는다.
+                log(f"⚠️ {STALL_KILL_SEC}초째 방송 소리가 들어오지 않아 다시 접속합니다.")
+                stats["last_bytes"] = now
+                proc.kill()
+                continue
             if listening and session_state != "정회" and not idle.is_set():
                 ref = max(stats["last_text"] or 0, stats["listen_since"] or now)
                 if now - ref >= SILENT_ALERT_SEC and not silent_alerted:
@@ -1449,24 +1493,32 @@ def put_control(q, item):
 stt_queue = queue.Queue(maxsize=20)   # 음성 구간·제어 신호 → 인식 스레드
 
 
-def finalize(q, reason, wait=60):
-    """끝내기 전에 기다리던 알림을 내보내고 요약을 보낸다."""
+def finalize(q, reason, wait=30):
+    """끝내기 전에 기다리던 알림을 내보내고 요약을 보낸다. 관리 프로세스는 1분까지 기다려 준다
+    (인식 마무리 최대 30초 + 알림 전송 최대 15초 + 요약 전송)."""
     final_done.clear()
     put_control(q, {"final": True})
     final_done.wait(wait)
+    deadline = time.time() + 15
+    with _send_lock:
+        pending = list(_send_threads)
+    for t in pending:
+        t.join(max(0.0, deadline - time.time()))
     send_summary(reason)
     reset_session_record()
 
 
 # -------------------- 방송 하나 감시(감시 프로세스) --------------------
-def run_watch(url, src):
-    """방송 하나를 듣는다. stop_event 가 켜지면 요약을 보내고 돌아온다."""
+def run_watch(url, src, resumed=False):
+    """방송 하나를 듣는다. stop_event 가 켜지면 요약을 보내고 돌아온다.
+    resumed=True 는 오류 뒤 같은 방송으로 다시 시작한 것 — 슬랙 인사를 또 보내지 않는다."""
     global stream_title, stream_meta, current_proc, session_state, expected_resume
     target.update(url=url, src=src)
     q = stt_queue
     greeted = False                    # 지금 대상으로 한 번이라도 들었나
-    ever_greeted = False               # 프로그램을 켠 뒤 한 번이라도 들었나
+    ever_greeted = resumed             # 프로그램을 켠 뒤 한 번이라도 들었나
     continuing = False                 # 2부로 이어 듣는 중(인사 대신 '이어 듣기' 알림을 이미 보냄)
+    quiet = resumed                    # 오류 뒤 다시 시작 — 시작·대기 알림을 또 보내지 않는다
     waiting_since = None
     fail_notified = False
     active_gen = None
@@ -1491,7 +1543,7 @@ def run_watch(url, src):
                                     "meta": dict(stream_meta)})
                     with _state_lock:
                         session_state = "unknown"
-                    continuing = False
+                    continuing = quiet = False
                     greeted, waiting_since, fail_notified, active_vid = False, None, False, None
                     log(f"🔄 감시 대상 변경 → {url} ({src})")
                 record(f"\n##### 감시 대상 변경 {time.strftime('%Y-%m-%d %H:%M:%S')} → {url} ({src})")
@@ -1517,7 +1569,7 @@ def run_watch(url, src):
                 if greeted:
                     record(f"\n===== ⏸ 방송 송출 멈춤 ({hhmmss(waiting_since)}) =====")
                 log(f"⏸ {e} — 1분마다 다시 확인합니다.")
-                if not greeted and not fail_notified and not continuing:
+                if not greeted and not fail_notified and not continuing and not quiet:
                     # 켜자마자(또는 갈아타자마자) 대상이 송출 중이 아니면 슬랙이 조용해서
                     # 켜졌는지조차 알 수 없다 — 한 번은 알린다.
                     send_slack(f"⏳ *감시 대기* (v{VERSION}) — 지정된 방송이 지금 송출 중이 아닙니다({e}).\n"
@@ -1589,7 +1641,7 @@ def run_watch(url, src):
             if continuing:
                 if session_state == "정회":
                     set_session("진행", "같은 회의의 다음 방송에서 재개")
-            else:
+            elif not quiet:
                 # 연결 확인용. 이게 안 오면 키워드를 기다릴 필요 없이 알림 설정부터 봐야 한다.
                 if ever_greeted:
                     hello = f"🔄 *감시 대상 변경* — {stream_title or url}\n{url}"
@@ -1600,27 +1652,29 @@ def run_watch(url, src):
                 send_slack(hello)
                 send_telegram(hello)
             greeted = ever_greeted = True
-            continuing = False
+            continuing = quiet = False
         if not stream_meta["start"]:
             log("⚠️ 방송 시작 시각을 몰라 '방송 열기'가 실시간 화면으로 연결됩니다.")
 
         proc = subprocess.Popen(
             # -rw_timeout: 정회 화면에서 송출이 멎어 응답이 끊기면 30초 뒤 빠져나와 재접속한다.
-            ["ffmpeg", "-loglevel", "error", "-rw_timeout", "30000000", "-i", stream_url,
+            # -nostdin·DEVNULL: 관리 프로세스의 'stop' 신호가 오는 입력을 ffmpeg 이 가로채면 안 된다.
+            ["ffmpeg", "-nostdin", "-loglevel", "error", "-rw_timeout", "30000000", "-i", stream_url,
              "-f", "s16le", "-ar", str(RATE), "-ac", "1", "-"],
-            stdout=subprocess.PIPE)
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE)
         with _target_lock:
             current_proc = proc
             stale = target["gen"] != gen or stop_event.is_set()
         if stale:
             proc.kill()
-        stats["listen_since"] = time.time()
+        stats["listen_since"] = stats["last_bytes"] = time.time()
         buf = b""
         try:
             while True:
                 data = proc.stdout.read(BPS)          # 1초씩
                 if not data:
                     break                             # 방송 종료·정회·주소 만료·대상 변경
+                stats["last_bytes"] = time.time()
                 buf += data
                 if len(buf) >= CHUNK_SEC * BPS:
                     start = time.time() - CHUNK_SEC   # 이 구간이 시작된 시각(수신 기준)
@@ -1664,22 +1718,28 @@ def child_main(label, url):
     refresh_keywords()
     refresh_watch()
     load_roster()
-    load_speaker_state()
+    load_speaker_state(url)
     threading.Thread(target=stt_worker, args=(stt_queue,), daemon=True).start()
     threading.Thread(target=health_watchdog, daemon=True).start()
     log(f"📡 감시 시작 v{VERSION}: {url}")
-    result = None
+    result, fails, resumed = None, 0, False
     while not stop_event.is_set():
+        began = time.time()
         try:
-            result = run_watch(url, "지정")
+            result = run_watch(url, "지정", resumed)
             break
         except KeyboardInterrupt:
             raise
-        except Exception as e:       # 예상 못 한 오류 — 30초 뒤 같은 방송으로 다시 시작한다
+        except Exception as e:       # 예상 못 한 오류 — 같은 방송으로 다시 시작한다
+            # 오래 잘 돌다 난 오류면 처음부터 세고, 곧바로 또 나면 간격을 늘린다(30초 … 최대 10분).
+            fails = fails + 1 if time.time() - began < 600 else 1
+            delay = min(600, 30 * 2 ** (fails - 1))
             log("⚠️ 감시 중 오류:\n" + traceback.format_exc())
-            send_slack(f"⚠️ 감시 중 오류로 30초 뒤 다시 시작합니다 — {short_error(e)}")
-            url = target["url"]
-            for _ in range(30):
+            if fails <= 3 or fails % 10 == 0:
+                send_slack(f"⚠️ 감시 중 오류로 {delay}초 뒤 다시 시작합니다(연속 {fails}회) — "
+                           f"{short_error(e)}")
+            url, resumed = target["url"], True
+            for _ in range(delay):
                 if stop_event.is_set():
                     break
                 time.sleep(1)
@@ -1691,66 +1751,105 @@ SCRIPT_PATH = os.path.abspath(__file__)
 
 
 class Supervisor:
-    """원격 지정 파일의 줄마다 감시 프로세스를 하나씩 띄우고, 바뀌면 끄고 켠다."""
+    """원격 지정 파일의 줄마다 감시 프로세스를 하나씩 띄운다. 감시 프로세스는 영상 id 로 구분해서,
+    다른 줄을 고치거나 줄 순서를 바꿔도 듣고 있던 방송은 끊지 않는다."""
+
+    STOP_WAIT = 60             # 끌 때 기다리던 알림·요약을 보낼 시간(감시 프로세스의 finalize 보다 길게)
 
     def __init__(self):
         self.lock = threading.Lock()
-        self.children = {}         # 키 → {"label","url","proc","stopping","finished","restart_at"}
-        self.desired = {}
+        # 영상 id → {"label","url","line","proc","stopping","finished","restart_at","started"}
+        self.children = {}
+        self.crashes = {}      # 영상 id → 켜자마자 연달아 죽은 횟수(재시작 간격·알림 횟수 조절)
 
     @staticmethod
     def wanted(stop, items):
+        """원하는 감시 목록: 영상 id → (방송 이름, 주소, 사용자가 붙인 이름).
+        같은 방송이 두 줄이면 첫 줄만. 이름이 없으면 방송1·방송2…, 겹치면 뒤에 숫자를 붙인다.
+        하나만 듣고 이름도 없으면 예전처럼 이름 없이(기록 파일 이름도 예전 그대로)."""
         if stop:
             return {}
-        if len(items) == 1 and not items[0][0]:
-            return {"": ("", items[0][1])}            # 하나만 듣고 이름이 없으면 예전과 같은 파일 이름
-        out = {}
-        for i, (label, url) in enumerate(items, 1):
-            lab = label or f"방송{i}"
-            while lab in out:
-                lab += "'"
-            out[lab] = (lab, url)
+        uniq, seen = [], set()
+        for label, url in items:
+            key = video_key(url)
+            if key not in seen:
+                seen.add(key)
+                uniq.append((key, clean_label(label), url))
+        if len(uniq) == 1 and not uniq[0][1]:
+            key, _, url = uniq[0]
+            return {key: ("", url, "")}
+        out, used = {}, set()
+        for i, (key, raw, url) in enumerate(uniq, 1):
+            base = raw or f"방송{i}"
+            lab, n = base, 2
+            while lab in used:
+                lab, n = f"{base}{n}", n + 1
+            used.add(lab)
+            out[key] = (lab, url, raw)
         return out
 
     def child_cmd(self, label, url):
         return [sys.executable, "-u", SCRIPT_PATH, "--child", label, url]
 
-    def start_child(self, key, label, url):
+    def start_child(self, key, label, url, line=None):
         proc = subprocess.Popen(self.child_cmd(label, url), stdin=subprocess.PIPE,
                                 cwd=HERE, text=True, encoding="utf-8")
-        self.children[key] = {"label": label, "url": url, "proc": proc, "stopping": False,
-                              "finished": False, "restart_at": None}
+        self.children[key] = {"label": label, "url": url, "line": line or (label, url),
+                              "proc": proc, "stopping": False, "finished": False,
+                              "restart_at": None, "started": time.time()}
         log(f"▶ 감시 시작: {label or '방송'} — {url}")
 
-    def stop_child(self, key, wait=25):
-        c = self.children.pop(key, None)
-        if not c:
-            return
-        c["stopping"] = True
-        p = c["proc"]
-        if p.poll() is None:
+    def _stop_many(self, keys, wait=None):
+        """여러 감시 프로세스에 한꺼번에 'stop' 을 보내고 함께 기다린다(하나씩 기다리면 오래 걸린다)."""
+        wait = self.STOP_WAIT if wait is None else wait
+        cs = [self.children.pop(k) for k in keys if k in self.children]
+        for c in cs:
+            c["stopping"] = True
+            if c["proc"].poll() is None:
+                try:
+                    c["proc"].stdin.write("stop\n")
+                    c["proc"].stdin.flush()
+                except Exception:
+                    pass
+        deadline = time.time() + wait
+        for c in cs:
             try:
-                p.stdin.write("stop\n")
-                p.stdin.flush()
-            except Exception:
-                pass
-            try:
-                p.wait(wait)
+                c["proc"].wait(max(0.1, deadline - time.time()))
             except subprocess.TimeoutExpired:
-                p.kill()
-        log(f"⏹ 감시 끔: {c['label'] or '방송'} — {c['url']}")
+                c["proc"].kill()
+            log(f"⏹ 감시 끔: {c['label'] or '방송'} — {c['url']}")
+
+    def stop_child(self, key, wait=None):
+        self._stop_many([key], wait)
 
     def apply(self, desired):
         with self.lock:
-            self.desired = desired
-            for key in list(self.children):
-                c = self.children[key]
-                # 주소가 바뀌었거나, 산회로 끝난 방송을 다시 지정했으면 새로 켠다.
-                if key not in desired or c["url"] != desired[key][1] or c["finished"]:
-                    self.stop_child(key)
-            for key, (label, url) in desired.items():
-                if key not in self.children:
-                    self.start_child(key, label, url)
+            stop = []
+            for key, c in self.children.items():
+                want = desired.get(key)
+                if want is None:
+                    stop.append(key)                  # 지정에서 빠진 방송
+                    continue
+                label, url, raw = want
+                if raw and raw != c["label"]:
+                    stop.append(key)                  # 이름을 바꿨다 — 새 이름의 기록 파일로 다시
+                elif c["finished"] and (raw, url) != c["line"]:
+                    stop.append(key)                  # 끝난 방송의 줄을 고쳐 다시 지정했다
+                # 그 밖에는(다른 줄만 바뀜, 자동 이름이 밀림) 듣던 대로 둔다
+            self._stop_many(stop)
+            taken = {c["label"] for c in self.children.values()}
+            for key, (label, url, raw) in desired.items():
+                if key in self.children:
+                    continue
+                lab = label
+                if lab in taken:                      # 계속 듣는 방송과 기록 파일이 겹치지 않게
+                    base, n = (raw, 2) if raw else ("방송", 1)
+                    while f"{base}{n}" in taken:
+                        n += 1
+                    lab = f"{base}{n}"
+                taken.add(lab)
+                self.crashes.pop(key, None)
+                self.start_child(key, lab, url, (raw, url))
 
     def on_remote(self, text):
         stop, items, bad = parse_targets(text)
@@ -1772,7 +1871,9 @@ class Supervisor:
         self.apply(self.wanted(stop, items))
 
     def watch_children(self):
-        """감시 프로세스가 예기치 않게 꺼지면 15초 뒤 다시 켠다. 산회로 끝났으면 두고 본다."""
+        """감시 프로세스가 예기치 않게 꺼지면 다시 켠다. 켜자마자 또 죽으면(패키지 누락 등) 간격을
+        15초, 30초, 1분 … 최대 10분으로 늘리고 알림도 줄인다. 산회로 끝났으면(종료 코드 0) 둔다."""
+        notices = []
         with self.lock:
             for key, c in list(self.children.items()):
                 code = c["proc"].poll()
@@ -1781,20 +1882,30 @@ class Supervisor:
                 if code == 0:
                     if not c["finished"]:
                         c["finished"] = True
+                        self.crashes.pop(key, None)
                         log(f"🏁 {c['label'] or '방송'} 감시 끝 — 새 주소가 오면 다시 시작합니다.")
                     continue
                 if c["restart_at"] is None:
-                    c["restart_at"] = time.time() + 15
-                    send_slack(f"⚠️ {('`' + c['label'] + '` ') if c['label'] else ''}감시 프로그램이 "
-                               f"예기치 않게 꺼져 15초 뒤 다시 켭니다(종료 코드 {code}).")
+                    n = self.crashes.get(key, 0) + 1 if time.time() - c["started"] < 120 else 1
+                    self.crashes[key] = n
+                    delay = min(600, 15 * 2 ** (n - 1))
+                    c["restart_at"] = time.time() + delay
+                    log(f"⚠️ {c['label'] or '방송'} 감시 프로그램이 꺼짐(종료 코드 {code}, 연속 {n}회) "
+                        f"— {delay}초 뒤 다시 켭니다.")
+                    if n <= 3 or n % 10 == 0:
+                        tag = f"`{c['label']}` " if c["label"] else ""
+                        notices.append(f"⚠️ {tag}감시 프로그램이 예기치 않게 꺼져 {delay}초 뒤 다시 "
+                                       f"켭니다(종료 코드 {code}, 연속 {n}회). PC 화면의 오류 메시지를 "
+                                       f"확인해 주세요.")
                 elif time.time() >= c["restart_at"]:
                     self.children.pop(key)
-                    self.start_child(key, c["label"], c["url"])
+                    self.start_child(key, c["label"], c["url"], c["line"])
+        for msg in notices:            # 전송이 느려도 다른 감시 프로세스 관리가 막히지 않게 잠금 밖에서
+            send_slack(msg)
 
     def stop_all(self):
         with self.lock:
-            for key in list(self.children):
-                self.stop_child(key, wait=40)
+            self._stop_many(list(self.children))
 
 
 def initial_targets(cli_url):
@@ -1815,14 +1926,14 @@ def initial_targets(cli_url):
         if text is not None:
             log("ℹ️ 명령줄 주소로 시작하고, 원격 지정이 바뀌면 그쪽을 따릅니다. "
                 "원격 주소로 시작하려면 주소 없이 실행하세요.")
-        return {"": ("", cli_url)}, sha, text, apply_first and text is None
+        return Supervisor.wanted(False, [("", cli_url)]), sha, text, apply_first and text is None
     if text is not None:
         stop, items, bad = parse_targets(text)
         for why, ln in bad:
             log(f"⚠️ 원격 지정의 이 줄은 쓸 수 없습니다: {ln[:80]}")
         if stop or items:
             return Supervisor.wanted(stop, items), sha, text, False
-    return {"": ("", YOUTUBE_URL)}, sha, text, apply_first and text is None
+    return Supervisor.wanted(False, [("", YOUTUBE_URL)]), sha, text, apply_first and text is None
 
 
 def update_checker():
@@ -1842,7 +1953,54 @@ def update_checker():
         time.sleep(UPDATE_CHECK_SEC)
 
 
+_instance_lock = None
+
+
+def single_instance():
+    """같은 폴더의 감시 프로그램이 이미 켜져 있으면 False(두 번 켜면 알림이 두 번 간다).
+    잠금은 프로그램이 꺼지면(강제 종료 포함) 운영체제가 풀어 준다."""
+    global _instance_lock
+    try:
+        f = open(os.path.join(HERE, "live_watch.lock"), "a+")
+    except OSError:
+        return True                    # 잠금 파일을 못 만들면 막지 않는다
+    try:
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return False
+    _instance_lock = f
+    return True
+
+
+def disable_quickedit():
+    """윈도우 콘솔 창을 마우스로 누르면 '선택' 상태가 되어 화면 출력이 막히고 감시가 멈춘다.
+    그 '빠른 편집 모드'를 이 창에서만 끈다(복사는 창 메뉴 → 편집 → 표시 로 할 수 있다)."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        h = k32.GetStdHandle(-10)                  # 표준 입력(콘솔)
+        mode = ctypes.c_uint32()
+        if k32.GetConsoleMode(h, ctypes.byref(mode)):
+            k32.SetConsoleMode(h, (mode.value & ~0x0040) | 0x0080)   # QUICK_EDIT 끔, EXTENDED_FLAGS
+    except Exception:
+        pass
+
+
 def supervisor_main(cli_url):
+    if not single_instance():
+        log("⚠️ 감시 프로그램이 이미 켜져 있습니다 — 다른 창(또는 자동 시작된 창)을 확인하세요. "
+            "두 개가 동시에 돌면 같은 알림이 두 번 갑니다.")
+        sys.exit(1)
+    disable_quickedit()
     channels = [n for n, ok in (("슬랙", SLACK_WEBHOOK),
                                 ("텔레그램", TELEGRAM_TOKEN and TELEGRAM_CHAT_ID)) if ok]
     log(f"생중계 키워드 감시 v{VERSION}")
@@ -1879,7 +2037,7 @@ def supervisor_main(cli_url):
                 log("🏁 모든 감시가 끝났습니다.")
                 break
     except KeyboardInterrupt:
-        log("종료 중 — 요약을 보내고 끕니다(최대 40초)…")
+        log("종료 중 — 요약을 보내고 끕니다(최대 1분)…")
         sup.stop_all()
     finally:
         keep_awake(False)
@@ -1949,10 +2107,10 @@ if __name__ == "__main__":
             child_main(args[1], args[2])
         except KeyboardInterrupt:
             # Ctrl+C 는 같은 창의 관리 프로세스와 감시 프로세스에 함께 간다 — 기다리던 알림과
-            # 요약을 보내고 끈다(관리 프로세스는 최대 40초 기다린다).
+            # 요약을 보내고 끈다(관리 프로세스는 최대 1분 기다린다).
             log("Ctrl+C — 기다리던 알림과 요약을 보내고 끕니다.")
             request_stop()
-            finalize(stt_queue, "Ctrl+C 로 종료", wait=20)
+            finalize(stt_queue, "Ctrl+C 로 종료", wait=25)
             sys.exit(0)
     elif args[:1] == ["--update"]:
         sys.exit(self_update())

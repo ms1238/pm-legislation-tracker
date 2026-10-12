@@ -7,7 +7,7 @@
 돌려줌)으로 감시 프로그램 전체 흐름을 돌린다. 슬랙으로 갈 메시지를 모아 확인한다.
 2026-10-07 국토위 실제 발언 표현(감사중지 선포, '치료해' 오인식, 박상준 PM 등)을 쓴다.
 """
-import os, queue, subprocess, sys, tempfile, threading, time
+import json, os, subprocess, sys, tempfile, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 TMP = tempfile.mkdtemp(prefix="lkw_test_")
@@ -49,7 +49,36 @@ def test_units():
                                        "https://www.youtube.com/@NATV/live\n# 메모")
     check("여러 줄 원격 지정", items == [("국토위", "https://www.youtube.com/watch?v=A"),
                                      ("행안위", "https://youtu.be/B")] and bad[0][0] == "channel")
-    check("하나·이름 없음은 예전 파일 이름", m.Supervisor.wanted(False, [("", "u")]) == {"": ("", "u")})
+    check("하나·이름 없음은 예전 파일 이름", m.Supervisor.wanted(False, [("", "u")]) == {"u": ("", "u", "")})
+    vid = "Jgedf-zK1eA"
+    check("영상 id 추출", {m.video_key(u) for u in [
+        f"https://www.youtube.com/watch?v={vid}", f"https://youtu.be/{vid}?si=x",
+        f"https://www.youtube.com/live/{vid}", f"https://m.youtube.com/watch?feature=share&v={vid}&t=30"]} == {vid})
+    A, B = "https://youtu.be/" + "A" * 11, "https://youtu.be/" + "B" * 11
+    w = m.Supervisor.wanted(False, [("국토 위!", A), ("", A + "?t=3"), ("", B), ("국토위", "https://youtu.be/" + "C" * 11)])
+    check("같은 방송 중복 제거·이름 정리·겹치는 이름", w == {
+        "A" * 11: ("국토위", A, "국토위"), "B" * 11: ("방송2", B, ""),
+        "C" * 11: ("국토위2", "https://youtu.be/" + "C" * 11, "국토위")}, str(w))
+    m.SLOT_LABEL = "국토/위 2부"
+    check("기록 파일 이름 정리", m.label_suffix() == "_국토위2부")
+    m.SLOT_LABEL = ""
+    bad = os.path.join(TMP, "bad.txt")
+    with open(bad, "wb") as f:
+        f.write("킥보드".encode("utf-8")[:-1] + b"\xff\xfe")
+    try:
+        m._read_text(bad)
+        check("깨진 글자 파일도 읽음", True)
+    except Exception as e:
+        check("깨진 글자 파일도 읽음", False, repr(e))
+    with open(m.state_file(), "w", encoding="utf-8") as f:
+        json.dump({"name": "염태영", "t": time.time(), "vid": "X" * 11}, f)
+    m.current_call = None
+    m.load_speaker_state("https://youtu.be/" + "Y" * 11)
+    check("다른 방송의 질의 위원은 이어받지 않음", m.current_call is None)
+    m.load_speaker_state("https://youtu.be/" + "X" * 11)
+    check("같은 방송이면 이어받음", (m.current_call or ("",))[0] == "염태영")
+    m.current_call = None
+    os.remove(m.state_file())
     check("stop 은 전부 멈춤", m.Supervisor.wanted(*m.parse_targets("u https://youtu.be/x\nstop")[:2]) == {})
     check("1부·2부 같은 회의", m.session_key(TITLE1) == m.session_key(TITLE2) == ("국토위", (26, 10, 7)))
     check("다른 날은 다른 회의", m.session_key(TITLE1) != m.session_key(TITLE1.replace("26.10.7.", "26.10.8.")))
@@ -72,7 +101,7 @@ def test_units():
     check("PM 주차·견인은 알림", m.rule_passes("피엠", "PM", "PM 주차 문제 견인"))
 
 
-def run_child(script, follow=None, seconds=60):
+def run_child(script, follow=None, seconds=60, resumed=False):
     """감시 프로세스(run_watch)를 스레드로 돌린다. script: [(대상 키, 파일, 제목, 끝나면 NotLiveNow)]."""
     m.stop_event.clear()
     m.target.update(url="https://www.youtube.com/watch?v=A", gen=0, keep=False)
@@ -99,7 +128,8 @@ def run_child(script, follow=None, seconds=60):
     real_wait = m.wait_for_change
     m.wait_for_change = lambda sec: real_wait(min(sec, 2))
     out = {}
-    t = threading.Thread(target=lambda: out.setdefault("r", m.run_watch(m.target["url"], "지정")), daemon=True)
+    t = threading.Thread(target=lambda: out.setdefault("r", m.run_watch(m.target["url"], "지정", resumed)),
+                         daemon=True)
     t.start()
     t.join(seconds)
     m.request_stop()
@@ -177,7 +207,8 @@ def test_health():
     with m._state_lock:
         m.session_state = "진행"
     m.idle.clear()
-    m.stats.update(last_text=time.time() - 100, listen_since=time.time() - 100, consec_err=3)
+    m.stats.update(last_text=time.time() - 100, listen_since=time.time() - 100, consec_err=3,
+                   last_bytes=time.time())
     m.expected_resume = {"gen": m.target["gen"], "at": time.time() - 3600, "alerted": False}
     try:
         m.health_watchdog()
@@ -190,6 +221,55 @@ def test_health():
     check("음성 인식 연속 오류 경고", any("음성 인식 오류가" in h for h in heads), str(heads))
     check("재개 예고 경과 경고는 듣는 중이면 안 보냄", not any("예고된 재개" in h for h in heads), str(heads))
 
+    killed = []
+
+    class Stuck:
+        def poll(self):
+            return None
+
+        def kill(self):
+            killed.append(1)
+    m.current_proc = Stuck()
+    m.stats["last_bytes"] = time.time() - m.STALL_KILL_SEC - 5
+    ticks["n"] = 2
+    m.time.sleep = fake_sleep
+    try:
+        m.health_watchdog()
+    except SystemExit:
+        pass
+    m.time.sleep = real_sleep
+    m.current_proc = None
+    check("소리가 끊긴 채 멈추면 다시 접속", killed == [1])
+
+
+def test_robust():
+    print("[인식 스레드: 분석 단계 오류에도 계속]")
+    seen = []
+    real_ws, real_ck = m.watch_session, m.check_keywords
+
+    def boom(*a):
+        raise RuntimeError("시험용 오류")
+    m.watch_session = boom
+    m.check_keywords = lambda text, *a: seen.append(text)
+    m.sr.Recognizer.recognize_google = lambda self, a, language, show_all=False: {
+        "alternative": [{"transcript": "공유 킥보드"}]}
+    pcm = b"\0" * (m.BPS * 2)
+    for _ in range(2):
+        m.stt_queue.put((pcm, time.time(), m.target["gen"], {"title": "", "id": "", "url": ""}))
+    m.final_done.clear()
+    m.stt_queue.put({"final": True})
+    ok = m.final_done.wait(20)
+    m.watch_session, m.check_keywords = real_ws, real_ck
+    check("한 단계가 실패해도 다음 단계·다음 구간을 처리", ok and seen == ["공유 킥보드"] * 2, str(seen))
+
+    SENT.clear()
+    with m._state_lock:
+        m.session_state = "정회"
+    run_child(["정회 중입니다"], seconds=8, resumed=True)
+    heads = [x.splitlines()[0] for x in SENT]
+    check("오류 뒤 다시 시작하면 시작 인사·속개 알림을 보내지 않음",
+          not any(h.startswith(("✅", "🔄", "⏳", "▶")) for h in heads), str(heads))
+
 
 def test_supervisor():
     print("[관리 프로세스: 여러 방송·교체·재시작]")
@@ -197,27 +277,56 @@ def test_supervisor():
     with open(dummy, "w", encoding="utf-8") as f:
         f.write("import sys, time\n"
                 "label, url = sys.argv[-2], sys.argv[-1]\n"
-                "if url.endswith('CRASH'): sys.exit(3)\n"
+                "if url.endswith('E' * 11): sys.exit(3)\n"
+                "if url.endswith('D' * 11): sys.exit(0)\n"
                 "for line in sys.stdin:\n"
                 "    if line.strip() == 'stop': break\n"
                 "sys.exit(0)\n")
     sup = m.Supervisor()
     sup.child_cmd = lambda label, url: [sys.executable, dummy, label, url]
     SENT.clear()
-    sup.on_remote("국토위 https://www.youtube.com/watch?v=A\n행안위 https://www.youtube.com/watch?v=B")
-    check("두 방송 동시 시작", set(sup.children) == {"국토위", "행안위"})
-    pa = sup.children["국토위"]["proc"]
-    sup.on_remote("국토위 https://www.youtube.com/watch?v=A\n행안위 https://www.youtube.com/watch?v=C")
-    check("바뀐 줄만 교체", sup.children["국토위"]["proc"] is pa and sup.children["행안위"]["url"].endswith("C"))
-    sup.on_remote("국토위 https://www.youtube.com/watch?v=CRASH")
+    A, B, C, D, E = ("https://www.youtube.com/watch?v=" + x * 11 for x in "ABCDE")
+    labels = lambda: {k[0]: c["label"] for k, c in sup.children.items()}
+    sup.on_remote(f"국토위 {A}\n행안위 {B}")
+    check("두 방송 동시 시작", labels() == {"A": "국토위", "B": "행안위"}, str(labels()))
+    pa = sup.children["A" * 11]["proc"]
+    sup.on_remote(f"행안위 {C}\n국토위 {A}")
+    check("줄 순서를 바꾸고 한 줄만 교체 → 그 방송만 교체", sup.children["A" * 11]["proc"] is pa
+          and labels() == {"A": "국토위", "C": "행안위"}, str(labels()))
+    sup.on_remote(f"{B}\n국토위 {A}\n행안위 {C}")
+    check("이름 없는 줄을 위에 추가해도 듣던 방송은 그대로", sup.children["A" * 11]["proc"] is pa
+          and labels() == {"A": "국토위", "B": "방송1", "C": "행안위"}, str(labels()))
+    sup.on_remote(f"{C}\n{B}")
+    check("자동 이름이 밀려도 끊지 않고, 새 방송과 파일 이름이 겹치지 않음",
+          labels() == {"B": "방송1", "C": "행안위"}, str(labels()))
+    sup.on_remote(f"{D}\n{B}")
     time.sleep(1.5)
     sup.watch_children()
-    check("예기치 않은 종료 알림", any("예기치 않게 꺼져" in s for s in SENT), str(SENT))
+    pd = sup.children["D" * 11]["proc"]
+    check("산회로 끝난 방송 표시", sup.children["D" * 11]["finished"])
+    sup.on_remote(f"{D}\n{B}\n국토위 {A}")
+    check("다른 줄만 바뀌면 끝난 방송을 다시 켜지 않음", sup.children["D" * 11]["proc"] is pd)
+    sup.on_remote(f"국토위2부 {D}\n{B}\n국토위 {A}")
+    check("끝난 방송의 줄을 고치면 다시 켬", sup.children["D" * 11]["proc"] is not pd
+          and sup.children["D" * 11]["label"] == "국토위2부")
+    sup.on_remote(f"{E}")
+    time.sleep(1.5)
+    sup.watch_children()
+    check("예기치 않은 종료 알림", any("예기치 않게 꺼져 15초" in s for s in SENT), str(SENT))
+    sup.children["E" * 11]["restart_at"] = 0
+    sup.watch_children()                      # 다시 켬
+    time.sleep(1.5)
+    sup.watch_children()                      # 또 바로 죽음 → 간격 두 배
+    c = sup.children["E" * 11]
+    check("켜자마자 또 죽으면 재시작 간격을 늘림", sup.crashes["E" * 11] == 2
+          and 25 < c["restart_at"] - time.time() <= 30, str(sup.crashes))
     sup.on_remote("stop")
     check("stop → 전부 멈춤", not sup.children)
     sup.on_remote("https://www.youtube.com/@NATV/live")
     check("채널 주소 거부 알림", any("채널 주소" in s for s in SENT), str(SENT))
     sup.stop_all()
+    check("한 번만 켜지게 잠금", m.single_instance() and m.single_instance() is False
+          if os.name != "nt" else True)
 
 
 def test_update():
@@ -238,6 +347,7 @@ if __name__ == "__main__":
     test_units()
     test_flow()
     test_health()
+    test_robust()
     test_supervisor()
     test_update()
     print("\n" + ("모두 통과" if not FAILS else f"실패 {len(FAILS)}건: {', '.join(FAILS)}"))

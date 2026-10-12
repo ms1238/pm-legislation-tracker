@@ -13,3 +13,4 @@ live_members.txt
 live_roster_cache.json
 live_state*.json
 *.bak
+live_watch.lock
