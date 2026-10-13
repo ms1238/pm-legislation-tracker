@@ -31,7 +31,6 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
 스크립트 옆 파일(.gitignore 처리됨, 같은 이름의 환경변수가 있으면 그쪽이 먼저):
     live_webhook.txt        슬랙 웹훅 주소(SLACK_LIVE_WEBHOOK_URL)
     live_keywords.txt       키워드·대체 표현·문맥 조건(실행 중 고쳐도 반영)
-    live_watch_members.txt  질의 시작을 따로 알릴 관심 의원(실행 중 고쳐도 반영)
     live_members.txt        명단에 없는 위원 직접 추가(선택, '이름 위원회')
     live_log_dir.txt        발언 기록·요약을 쓸 폴더(예: 구글 드라이브)
     live_log_link.txt       그 폴더의 공유 링크 — 알림에 붙는다
@@ -58,7 +57,7 @@ import collections, json, os, queue, re, subprocess, sys, threading, time, trace
 import speech_recognition as sr
 import yt_dlp
 
-VERSION = "2026.10.12-1"            # 슬랙 시작 메시지와 새 버전 알림에 쓴다
+VERSION = "2026.10.13-1"            # 슬랙 시작 메시지와 새 버전 알림에 쓴다
 
 # ==================== [ 설정 ] ====================
 YOUTUBE_URL = "https://www.youtube.com/watch?v=nCAVxaqGiVM"   # 원격 지정도 명령줄 주소도 없을 때
@@ -90,10 +89,10 @@ FOLLOW_CHUNKS = 2                  # 감지 후 더 들을 구간 수(취지 파
 CONTEXT_BEFORE_SEC = 30            # 알림에 붙일 감지 앞쪽 발언 길이
 LINK_LEAD_SEC = 40                 # '방송 열기'를 발언보다 이만큼 앞에서 시작한다.
                                    # 유튜브 생중계 지연(10~30초)과 앞 맥락을 덮는다.
-SILENT_ALERT_SEC = 10 * 60         # 회의 진행 중인데 이만큼 인식된 발언이 없으면 경고
+SILENT_ALERT_SEC = 0               # 회의 중 이만큼 인식된 발언이 없으면 경고(초). 0 이면 끈다
 STT_ERROR_ALERT = 5                # 음성 인식 오류가 이만큼 연달아 나면 경고
 STALL_KILL_SEC = 120               # 방송 소리가 이만큼 안 들어오면(접속 멈춤) 끊고 다시 붙는다
-HEARTBEAT_MIN = 60                 # 상태 보고 주기(분). 0 이면 끈다
+HEARTBEAT_MIN = 0                  # 상태 보고 주기(분). 0 이면 끈다
 FOLLOW_SEARCH_SEC = 120            # 방송이 끝났을 때 같은 회의의 다음 방송(2부)을 찾는 주기
 RESUME_GRACE_SEC = 10 * 60         # 예고된 재개 시각에서 이만큼 지나도 못 들으면 경고
 UPDATE_CHECK_SEC = 30 * 60         # 새 버전 확인 주기
@@ -250,7 +249,7 @@ def add_event(kind, t, **kw):
         events.append(dict(kind=kind, t=t, **kw))
 
 
-# -------------------- 위원 명단(이름 보정)·관심 의원 --------------------
+# -------------------- 위원 명단(이름 보정) --------------------
 # 음성 인식은 위원 이름을 자주 틀린다(2026-10-07 국토위: 질의 순서 16건 중 약 7건 — '목용',
 # '김해', '복귀한', '저녁에' …). 이 저장소의 법안 트래커가 관리하는 의원 명단(위원회 포함)에서
 # 발음이 가장 가까운 이름으로 바로잡는다. 명단에 없는 사람을 엉뚱한 위원으로 바꾸지 않게,
@@ -258,11 +257,6 @@ def add_event(kind, t, **kw):
 ROSTER_URL = f"https://raw.githubusercontent.com/{REMOTE_REPO}/master/automation/member_snapshot.json"
 ROSTER_CACHE = os.path.join(HERE, "live_roster_cache.json")
 EXTRA_MEMBERS_FILE = os.path.join(HERE, "live_members.txt")      # 명단에 없는 위원을 직접 추가(선택)
-WATCH_FILE = os.path.join(HERE, "live_watch_members.txt")        # 질의 시작을 따로 알릴 관심 의원
-DEFAULT_WATCH_FILE = """\
-# 질의를 시작하면 슬랙으로 따로 알릴 관심 의원 — 한 줄에 한 명. 저장하면 바로 반영됩니다.
-염태영
-"""
 # 방송 제목의 위원회 약칭 → 명단의 위원회 이름에 들어 있는 말
 COMMITTEE_ABBR = {"국토위": "국토교통", "행안위": "행정안전", "과방위": "과학기술정보", "산자위": "산업통상",
                   "산자중기위": "산업통상", "정무위": "정무", "기재위": "기획재정", "재경위": "재정경제",
@@ -270,8 +264,6 @@ COMMITTEE_ABBR = {"국토위": "국토교통", "행안위": "행정안전", "과
                   "농해수위": "농림", "복지위": "보건복지", "외통위": "외교통일", "국방위": "국방",
                   "여가위": "여성가족", "성평등가족위": "성평등가족", "운영위": "운영", "정보위": "정보"}
 roster = {}                        # 이름 → 위원회(쉼표로 이어진 문자열)
-watch_members = set()
-_watch_mtime = None
 
 
 def _read_text(path):
@@ -312,25 +304,6 @@ def load_roster():
     log(f"위원 명단: {len(roster)}명 (이름 보정에 씀)")
 
 
-def refresh_watch():
-    """live_watch_members.txt 가 바뀌었으면 다시 읽는다(없으면 만든다)."""
-    global watch_members, _watch_mtime
-    try:
-        if not os.path.exists(WATCH_FILE):
-            with open(WATCH_FILE, "w", encoding="utf-8") as f:
-                f.write(DEFAULT_WATCH_FILE)
-        mtime = os.path.getmtime(WATCH_FILE)
-        if mtime == _watch_mtime:
-            return
-        names = {ln.split("#", 1)[0].strip() for ln in _read_text(WATCH_FILE).splitlines()}
-        names.discard("")
-        if _watch_mtime is not None:
-            log(f"🔄 관심 의원 갱신: {', '.join(sorted(names)) or '없음'}")
-        watch_members, _watch_mtime = names, mtime
-    except OSError as e:
-        log(f"⚠️ 관심 의원 파일을 읽지 못함: {e}")
-
-
 def committee_hint(title):
     """방송 제목에서 위원회 약칭(국토위 등)을 찾아 명단 검색어로 바꾼다. 모르면 None."""
     for abbr in sorted(COMMITTEE_ABBR, key=len, reverse=True):
@@ -351,8 +324,7 @@ def snap_name(name, meta=None):
     """음성 인식된 이름을 명단의 가장 가까운 이름으로 바로잡는다. 못 바꾸면 None."""
     pool, loose = committee_pool(meta)   # 그 위원회 명단이 충분할 때만 넉넉하게 바로잡는다
     if not loose:
-        pool = list(roster) + sorted(watch_members)
-    pool = list(dict.fromkeys(pool + sorted(watch_members)))
+        pool = list(roster)
     if not pool or name in pool:
         return name if name in pool else None
     wj = to_jamo(name)[0]
@@ -516,7 +488,6 @@ def update_speaker(text, start, cgen, meta=None):
     global current_call
     if not is_current(cgen):
         return
-    refresh_watch()
     for i, rx in enumerate(CALL_RES):
         for m in rx.finditer(text):
             name = raw = m.group(1)
@@ -546,23 +517,12 @@ def update_speaker(text, start, cgen, meta=None):
             record(f"\n----- 👤 {label}{heard} 질의 순서 ({hhmmss(start)}) -----", start)
             url, pos = moment_link(start, meta)
             add_event("call", start, name=name, raw=raw, url=url, pos=pos)
-            if name and name in watch_members:
-                add_event("watch", start, name=name, url=url, pos=pos)
-                title = (meta or stream_meta).get("title") or stream_title
-                send_slack("\n".join(filter(None, [
-                    f"🎯 *관심 의원 질의 시작: {name} 위원* ({hhmmss(start)}경){heard}",
-                    f"*회의*  {title}" if title else "",
-                    f"<{url}|▶ 해당 지점 보기 ({pos})>" if pos else f"<{url}|▶ 방송 열기>",
-                    f"<{LOG_LINK}|📄 전체 발언 기록 보기>" if LOG_LINK else ""])))
             try:
                 with open(state_file(), "w", encoding="utf-8") as f:
                     json.dump({"name": name, "t": start, "vid": (meta or {}).get("id") or ""},
                               f, ensure_ascii=False)
             except OSError:
                 pass
-            if session_state == "정회":
-                # 속개 선포를 못 알아들었어도 질의가 다시 시작됐으면 회의는 진행 중이다.
-                set_session("진행", f"{label} 질의 호명 감지", start)
 
 
 def speaker_line(text, at):
@@ -1331,11 +1291,6 @@ def summary_text(reason, meta=None):
     lines = [f"📋 *감시 요약* — {title}",
              f"_{reason}_ · {_hm(session_t0)}~{_hm(time.time())} · 인식 {texts}구간 · "
              f"키워드 알림 {len(alerts)}건" + (f"(문맥 조건으로 생략 {len(supp)}건)" if supp else "")]
-    if watch_members:
-        seen = {e["name"]: e for e in evs if e["kind"] == "watch"}
-        lines.append("*관심 의원*  " + ", ".join(
-            f"{n} {_hm(seen[n]['t'])} 질의" if n in seen else f"{n} 질의 없음"
-            for n in sorted(watch_members)))
     if calls:
         lines.append(f"*질의 순서* ({len(calls)}명)")
         for e in calls[:40]:
@@ -1405,7 +1360,7 @@ def health_watchdog():
                 stats["last_bytes"] = now
                 proc.kill()
                 continue
-            if listening and session_state != "정회" and not idle.is_set():
+            if SILENT_ALERT_SEC and listening and session_state != "정회" and not idle.is_set():
                 ref = max(stats["last_text"] or 0, stats["listen_since"] or now)
                 if now - ref >= SILENT_ALERT_SEC and not silent_alerted:
                     silent_alerted = True
@@ -1716,7 +1671,6 @@ def child_main(label, url):
     SLOT_LABEL, REMOTE_ON = label, False
     threading.Thread(target=_stdin_listener, daemon=True).start()
     refresh_keywords()
-    refresh_watch()
     load_roster()
     load_speaker_state(url)
     threading.Thread(target=stt_worker, args=(stt_queue,), daemon=True).start()
@@ -2010,9 +1964,7 @@ def supervisor_main(cli_url):
     if SLACK_WEBHOOK and not SLACK_WEBHOOK.startswith("https://hooks.slack.com/"):
         log(f"⚠️ 슬랙 웹훅 주소 형식이 이상합니다: {SLACK_WEBHOOK[:40]}...")
     refresh_keywords()
-    refresh_watch()
     log(f"키워드: {', '.join(KEYWORDS)}  (live_keywords.txt — 실행 중 고쳐도 반영)")
-    log(f"관심 의원: {', '.join(sorted(watch_members)) or '없음'}  (live_watch_members.txt)")
     log(f"📝 발언 기록·요약: {LOG_DIR}")
     log(f"기록 공유 링크: {'있음 — 알림에 붙습니다' if LOG_LINK else '없음(live_log_link.txt)'}")
     desired, sha, text, apply_first = initial_targets(cli_url)
