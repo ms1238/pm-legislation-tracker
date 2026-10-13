@@ -16,7 +16,6 @@ import live_keyword_watch as m  # noqa: E402
 
 m.HERE = TMP                                      # 키워드·관심 의원·상태 파일을 임시 폴더에
 m.KEYWORDS_FILE = os.path.join(TMP, "live_keywords.txt")
-m.WATCH_FILE = os.path.join(TMP, "live_watch_members.txt")
 m.ROSTER_CACHE = os.path.join(TMP, "roster.json")
 m.EXTRA_MEMBERS_FILE = os.path.join(TMP, "none.txt")
 SNAPSHOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "member_snapshot.json")
@@ -90,7 +89,6 @@ def test_units():
     r = m.parse_resume_time("그러면 오후 5시 20분에 감사를 계속하도록", at(16, 49))
     check("오후 5시 20분 → 17:20", r == at(17, 20))
     m.load_roster()
-    m.refresh_watch()
     meta = {"title": TITLE1}
     fixes = {n: m.snap_name(n, meta) for n in ["윤종호", "허용", "김해", "목용", "복귀한", "전기요금", "장종태"]}
     check("명단 이름 보정", fixes == {"윤종호": "윤종오", "허용": "허영", "김해": "김미애", "목용": "모경종",
@@ -161,7 +159,8 @@ def test_flow():
     heads = [s.splitlines()[0] for s in SENT]
     joined = "\n".join(SENT)
     check("시작 알림(버전 포함)", any(h.startswith("✅") and f"v{m.VERSION}" in h for h in heads), str(heads))
-    check("관심 의원 알림", any("관심 의원 질의 시작: 염태영" in h for h in heads), str(heads))
+    check("관심 의원 알림 없음", not any("관심 의원" in h for h in heads), str(heads))
+    check("정기 상태 보고 꺼짐", m.HEARTBEAT_MIN == 0 and not any("상태 보고" in h for h in heads), str(heads))
     check("킥보드 알림", any(h.startswith("🚨") and "킥보드" in h for h in heads), str(heads))
     check("PM 예타는 알림 안 함", not any(h.startswith("🚨") and "피엠" in h for h in heads), str(heads))
     check("정회 알림", any("정회" in h for h in heads), str(heads))
@@ -175,7 +174,7 @@ def test_flow():
     if summ:
         s = summ[-1]
         check("요약: 이름 보정 표시", "모경종 위원 (인식: 목용)" in s, s)
-        check("요약: 관심 의원 질의", "염태영" in s and "질의 없음" not in s, s)
+        check("요약: 질의 순서에 염태영", "염태영" in s and "관심 의원" not in s, s)
         check("요약: 문맥 생략 집계", "생략 1건" in s, s)
         check("요약: 2부 이어 듣기 기록", "다음 방송으로 이어 듣기" in s, s)
     files = os.listdir(os.environ["LIVE_LOG_DIR"])
