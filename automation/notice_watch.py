@@ -151,6 +151,19 @@ API_ATTEMPTS = 0
 API_FAILURES = 0
 FAILURE_ABORT_RATIO = 0.5
 
+# 상대가 거절하면 이 실행은 아무것도 못 하고 1로 끝난다. 그동안 그 사실은
+# 깃허브 "Run failed" 메일에만 남았고, 슬랙 채널은 멀쩡해 보였다 — 그래서
+# 2026-09-13 에 멈춘 걸 23일 뒤에야 알았다. 못 돌았다는 것도 알림이다.
+#
+# 다만 하루 세 번 같은 소리를 보내면 그것대로 읽히지 않는다. 첫 스케줄(09:30)과
+# 손으로 돌린 실행만 보낸다 — 어느 실행이 보낼지는 워크플로가 정해 내려준다.
+def should_alert_failure():
+    return os.environ.get("ALERT_ON_FAILURE", "").strip().lower() == "true"
+
+
+# 목록이 왜 안 읽혔는지. 401(거절)과 무응답(타임아웃)은 사람이 할 일이 다르다.
+LIST_FAIL_REASON = None
+
 
 def now_kst():
     return datetime.now(KST)
@@ -251,6 +264,7 @@ def fetch_open_notices():
     기본 응답은 20건이다. 문서의 요청변수에는 페이징이 없지만 pageSize·pageIndex가
     실제로 먹는다(실측). 한 쪽 100건씩 받아, 덜 온 쪽이 나오면 거기서 멈춘다.
     """
+    global LIST_FAIL_REASON
     rows, seen_ids = [], set()
     for page in range(1, MAX_PAGES + 1):
         t0 = time.time()
@@ -262,16 +276,32 @@ def fetch_open_notices():
         # 남겨 둬야 다음에 또 느려졌을 때 짐작이 아니라 기록으로 볼 수 있다.
         log("목록 %d쪽: %.1f초%s" % (page, time.time() - t0, "" if xml else " — 실패"))
         if xml is None:
-            return None if page == 1 else rows
+            if page == 1:
+                LIST_FAIL_REASON = (
+                    "목록 요청에 응답이 없다 (%d초 timeout × %d회 재시도까지 실패). "
+                    "서버가 느리거나 러너에서 .go.kr 로 못 나가는 상태."
+                    % (LIST_TIMEOUT, LIST_TRIES))
+                return None
+            return rows
         if "<retMsg>401</retMsg>" in xml:
-            # 시크릿을 의심할 일이 아니다. 같은 OC가 어떤 날은 되고 어떤 날은
-            # 401 이며, 같은 순간에도 러너 IP에 따라 401 과 타임아웃으로 갈렸다
-            # (실측). 상대가 출발지를 보고 막는 쪽이라 한 실행 안에서 다시 걸어도
-            # 같은 IP라 소용이 없다 — 그래서 재시도하지 않고, 대신 하루 여러 번
-            # 돌려서 되는 창을 잡는다.
-            log("401 — 서버가 이 요청을 거절했다. OC 값 문제가 아니라"
-                " 출발지(러너 IP)를 타는 거절로 보인다.")
+            # 401 = 권한없음. 운영가이드가 "정보공개를 신청한 사용자만 서비스
+            # 허가합니다"라고 못박고 있고, 승인은 회원가입 승인과 입법정보 공개신청
+            # 승인 두 단계이며 호출할 IP를 등록해 두어야 한다.
+            #   https://community.lawmaking.go.kr/api/operationGuideInfo
+            #
+            # 예전 주석은 이걸 "러너 IP를 타는 간헐적 거절"로 보고 하루 세 번
+            # 돌려 되는 창을 잡으려 했지만, 2026-09-13 이후로는 세 시간대 전부
+            # 100% 401 이고 사람의 브라우저(전혀 다른 IP)에서도 같은 401 이 나왔다.
+            # 출발지 문제라면 둘이 같을 수 없다 — 승인 쪽을 먼저 본다.
+            #
+            # 어느 쪽이든 한 실행 안에서 다시 거는 건 의미가 없어 재시도하지 않는다.
+            log("401 권한없음 — 정보공개 신청이 승인된 사용자만 호출할 수 있다.")
             log("이번 실행은 접고 다음 실행에 맡긴다. 상태는 건드리지 않는다.")
+            LIST_FAIL_REASON = (
+                "국민참여입법센터가 401(권한없음)로 거절했다. OC 오타가 아니라면"
+                " ① 입법정보 공개신청 승인이 살아 있는지 ② 호출 IP가 등록돼 있는지"
+                " 두 가지다. 러너 IP는 실행마다 바뀌어 ②를 만족시킬 수 없다."
+                " <https://community.lawmaking.go.kr/api/operationGuideInfo|운영가이드>")
             return None
         got = [r for r in records(xml) if r.get("ogLmPpSeq")]
         fresh = [r for r in got if r["ogLmPpSeq"] not in seen_ids]
@@ -284,6 +314,8 @@ def fetch_open_notices():
         time.sleep(DELAY_SEC)
     if not rows:
         log("목록 응답에 항목이 없다")
+        LIST_FAIL_REASON = ("응답은 왔는데 항목이 하나도 없다."
+                            " 응답 형식이 바뀌었을 수 있다 — --ping 으로 원문을 볼 것.")
         return None
     return rows
 
@@ -550,6 +582,43 @@ def slack_send(webhook, text, blocks):
         return resp.status
 
 
+def stale_days(state):
+    """마지막으로 감시가 끝까지 돈 뒤 며칠이 지났나. 모르면 None."""
+    last = (state or {}).get("last_run")
+    if not last:
+        return None
+    try:
+        then = datetime.strptime(last, "%Y-%m-%d %H:%M:%S").replace(tzinfo=KST)
+    except ValueError:
+        return None
+    return (now_kst() - then).days
+
+
+def alert_failure(webhook, reason, state):
+    """감시가 못 돌았다고 채널에 알린다.
+
+    알림을 못 보내는 상황에서 또 예외를 던지면 원래 실패 이유가 로그에서 밀린다.
+    여기서는 무슨 일이 있어도 조용히 로그만 남기고 돌아간다.
+    """
+    if not webhook or not should_alert_failure():
+        return
+    days = stale_days(state)
+    headline = "🛴 입법예고 감시가 돌지 못했다"
+    if days is not None and days >= 1:
+        headline += " — 마지막 성공으로부터 %d일" % days
+    run = ""
+    if os.environ.get("GITHUB_RUN_ID"):
+        run = "\n<https://github.com/%s/actions/runs/%s|실행 로그 보기>" % (
+            os.environ.get("GITHUB_REPOSITORY", ""), os.environ["GITHUB_RUN_ID"])
+    text = "%s\n%s%s" % (headline, reason or "원인 불명", run)
+    try:
+        log("실패 알림 전송 (HTTP %s)" % slack_send(
+            webhook, headline,
+            [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]))
+    except Exception as e:
+        log("실패 알림마저 못 보냈다 — %r" % e)
+
+
 def build_blocks(found):
     """본문에 관심어가 나온 건과, 법 이름만 보고 올린 건을 갈라 놓는다.
 
@@ -741,6 +810,7 @@ def main():
     rows = fetch_open_notices()
     if rows is None:
         log("목록을 못 읽었다. 상태를 건드리지 않고 종료한다.")
+        alert_failure(webhook, LIST_FAIL_REASON, state)
         return 1
     log("진행중인 입법예고 %d건" % len(rows))
 
@@ -859,6 +929,7 @@ def main():
     log("조회 상태: %s" % health)
     if ratio >= FAILURE_ABORT_RATIO:
         log("실패율이 높아 이번 실행은 믿을 수 없다. 상태를 갱신하지 않는다.")
+        alert_failure(webhook, "본문 조회 실패율이 너무 높다 — %s" % health, state)
         return 1
 
     blocks = []
@@ -910,4 +981,13 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # 깔끔하게 접고 나가는 길은 main() 안에서 알린다. 여기서 받는 건 예상 못 한
+    # 쪽 — 트레이스백은 로그에 그대로 남기고, 채널에는 못 돌았다는 사실만 올린다.
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        alert_failure(os.environ.get("SLACK_WEBHOOK_URL", "").strip(),
+                      "예상 못 한 오류로 중단됐다 — %r" % exc, load_state())
+        sys.exit(1)
