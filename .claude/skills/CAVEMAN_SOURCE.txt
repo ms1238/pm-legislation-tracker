@@ -1,0 +1,1 @@
+caveman, ultracave, megacave: copied from https://github.com/JuliusBrussee/caveman @ bad48a0 (Apache-2.0). Skills only; the auto-start hooks and proxy are not installed.
