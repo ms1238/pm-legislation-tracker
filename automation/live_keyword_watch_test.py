@@ -79,6 +79,30 @@ def test_units():
     m.current_call = None
     os.remove(m.state_file())
     check("stop 은 전부 멈춤", m.Supervisor.wanted(*m.parse_targets("u https://youtu.be/x\nstop")[:2]) == {})
+    smc = "https://cloudlive.smc.seoul.kr/hls/svmobile2.m3u8?uqk=abc"
+    stop, items, bad = m.parse_targets(f"시의회 {smc}\nhttps://example.com/live.do?key=1")
+    check("스트림 주소(.m3u8) 받음·일반 페이지는 거부", items == [("시의회", smc)] and bad and bad[0][0] == "invalid",
+          str((items, bad)))
+    real_get = m._http_get
+    seen_headers = {}
+
+    def fake_get(url, headers=None):
+        seen_headers.update(headers or {})
+        return b"#EXTM3U\n#EXT-X-TARGETDURATION:4\nseg1.ts\n"
+    m._http_get = fake_get
+    su, meta = m.get_live_stream(smc)
+    check("스트림 직접 열기", su == smc and meta["direct"] and meta["title"] == "서울시의회 생중계"
+          and seen_headers.get("Referer") == "https://ms.smc.seoul.kr/", str((meta, seen_headers)))
+    m._http_get = lambda url, headers=None: b"#EXTM3U\nseg1.ts\n#EXT-X-ENDLIST\n"
+    try:
+        m.get_live_stream(smc)
+        check("끝난 스트림은 대기", False)
+    except m.NotLiveNow as e:
+        check("끝난 스트림은 대기", not e.ended)
+    m._http_get = real_get
+    check("스트림은 시점 링크 없음", m.moment_link(time.time(), meta) == (None, None)
+          and "링크를 만들 수 없습니다" in m.link_line({"link": (None, None)}))
+    check("시의회 방송엔 국회의원 이름 보정 안 함", m.snap_name("목용", meta) is None)
     check("1부·2부 같은 회의", m.session_key(TITLE1) == m.session_key(TITLE2) == ("국토위", (26, 10, 7)))
     check("다른 날은 다른 회의", m.session_key(TITLE1) != m.session_key(TITLE1.replace("26.10.7.", "26.10.8.")))
 

@@ -18,6 +18,7 @@ GitHub Actions 에서는 돌리지 않는다. 유튜브가 데이터센터 IP �
     python live_keyword_watch.py --install-startup    # 윈도우 로그인 때 자동으로 켜기(--uninstall-startup)
 
 원격 지정: 이 저장소의 automation/live_target.txt 에 유튜브 주소를 한 줄에 하나씩 적어 두면,
+(서울시의회 등 유튜브가 아닌 생중계는 .m3u8 스트림 주소를 그대로 적는다)
 실행 중인 PC가 30초마다 확인해서 1분 안팎에 그 방송(들)을 듣는다. 여러 줄이면 동시에 듣고,
 주소 앞에 이름을 붙이면(예: '국토위 https://…') 알림·기록 파일에 그 이름이 붙는다. 'stop' 은
 모두 멈춤. 채널 주소(@채널/live)는 받지 않는다. 저장소가 공개라 PC 쪽엔 키가 필요 없다.
@@ -57,7 +58,7 @@ import collections, json, os, queue, re, subprocess, sys, threading, time, trace
 import speech_recognition as sr
 import yt_dlp
 
-VERSION = "2026.10.13-1"            # 슬랙 시작 메시지와 새 버전 알림에 쓴다
+VERSION = "2026.11.03-1"            # 슬랙 시작 메시지와 새 버전 알림에 쓴다
 
 # ==================== [ 설정 ] ====================
 YOUTUBE_URL = "https://www.youtube.com/watch?v=nCAVxaqGiVM"   # 원격 지정도 명령줄 주소도 없을 때
@@ -322,6 +323,8 @@ def committee_pool(meta=None):
 
 def snap_name(name, meta=None):
     """음성 인식된 이름을 명단의 가장 가까운 이름으로 바로잡는다. 못 바꾸면 None."""
+    if (meta or stream_meta).get("direct"):
+        return None                    # 국회의원 명단이라 시의회 등 다른 방송에는 쓰지 않는다
     pool, loose = committee_pool(meta)   # 그 위원회 명단이 충분할 때만 넉넉하게 바로잡는다
     if not loose:
         pool = list(roster)
@@ -592,6 +595,8 @@ def highlight(text, terms, mark="*"):
 def moment_link(at, meta=None):
     """발언 시점으로 가는 유튜브 링크. 시작 시각을 모르면 그 방송 주소(실시간)."""
     m = meta or stream_meta
+    if m.get("direct"):
+        return None, None              # 스트림 주소(.m3u8)는 시점 이동 링크를 만들 수 없다
     vid, t0 = m.get("id"), m.get("start")
     if not (vid and t0):
         return (m.get("url") or YOUTUBE_URL), None
@@ -620,6 +625,8 @@ def format_slack(alert, context):
 
 def link_line(alert):
     url, pos = alert["link"]
+    if not url:
+        return "_이 방송은 발언 지점 링크를 만들 수 없습니다 — 전체 발언 기록에서 시각으로 찾아 주세요_"
     if pos:
         return f"<{url}|▶ 발언 지점부터 보기 ({pos})>  _발언 {LINK_LEAD_SEC}초 전부터 재생_"
     return f"<{url}|▶ 방송 열기(실시간)>  _시작 시각을 몰라 발언 지점 링크를 못 만듦_"
@@ -632,7 +639,7 @@ def format_telegram(alert, context):
              f"• 발언 시각: {hhmmss(alert['start'])}경",
              f"• 발언자(추정): {alert['speaker']}",
              f"• 발언 내용: {merge_chunks([t for _, t in context])}",
-             f"• 방송({pos} 지점): {url}" if pos else f"• 방송(실시간): {url}"]
+             f"• 방송({pos} 지점): {url}" if pos else (f"• 방송(실시간): {url}" if url else "• 방송 링크 없음")]
     return "\n".join(lines)
 
 
@@ -1003,6 +1010,22 @@ target_changed = threading.Event()
 stop_event = threading.Event()     # 끝내라는 신호(관리 프로세스의 stop, Ctrl+C)
 current_proc = None                # 지금 듣고 있는 ffmpeg — 대상이 바뀌면 끊는다
 YOUTUBE_RE = re.compile(r"^https?://(?:www\.|m\.)?(?:youtube\.com|youtu\.be)/\S+$", re.IGNORECASE)
+# 유튜브가 아닌 생중계(서울시의회 등)는 페이지가 아니라 스트림 주소(.m3u8)를 받는다.
+DIRECT_RE = re.compile(r"^https?://[^\s/]+/\S*\.m3u8(?:[?#]\S*)?$", re.IGNORECASE)
+# 스트림 서버가 재생 페이지에서 온 요청만 받는 경우를 대비한 Referer, 알림에 쓸 방송 이름
+DIRECT_SITES = {"smc.seoul.kr": ("https://ms.smc.seoul.kr/", "서울시의회 생중계")}
+
+
+def is_direct(url):
+    return bool(DIRECT_RE.match(url or ""))
+
+
+def direct_site(url):
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    for suffix, site in DIRECT_SITES.items():
+        if host == suffix or host.endswith("." + suffix):
+            return site
+    return ("", f"{host} 생중계")
 # 채널 단위 주소: 그 채널의 '아무' 생중계로 붙어서, 상임위가 여럿이면 엉뚱한 방송을 듣게 된다.
 CHANNEL_RE = re.compile(r"youtube\.com/(?:@[^/?#]+|channel/[^/?#]+|c/[^/?#]+|user/[^/?#]+)"
                         r"(?:/[^?#]*)?(?:[?#].*)?$", re.IGNORECASE)
@@ -1071,7 +1094,7 @@ def parse_targets(text):
         label = (ln[:m.start()] + " " + ln[m.end():]).strip(" \t-:|·")
         if CHANNEL_RE.search(url):
             bad.append(("channel", ln))
-        elif not YOUTUBE_RE.match(url):
+        elif not (YOUTUBE_RE.match(url) or is_direct(url)):
             bad.append(("invalid", ln))
         else:
             items.append((label, url))
@@ -1172,8 +1195,30 @@ def _meta_from(info, url=None):
             "url": url or info.get("webpage_url") or ""}
 
 
+def get_direct_stream(url):
+    """스트림 주소(.m3u8)를 직접 연다. 재생 목록을 받아 보고 송출 중인지만 확인한다."""
+    referer, title = direct_site(url)
+    meta = {"title": title, "id": video_key(url), "start": None, "channel_url": "", "url": url,
+            "direct": True}
+    headers = {"User-Agent": BROWSER_UA, **({"Referer": referer} if referer else {})}
+    try:
+        body = _http_get(url, headers=headers).decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        raise NotLiveNow(f"스트림 응답 {e.code} — 방송 전이거나 주소(접속 키)가 만료됨", meta)
+    if "#EXTM3U" not in body:
+        raise NotLiveNow("스트림 주소가 재생 목록을 돌려주지 않음", meta)
+    if "#EXT-X-ENDLIST" in body:
+        raise NotLiveNow("방송이 끝난 상태", meta)
+    return url, meta
+
+
+BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+
+
 def get_live_stream(url):
     """유튜브 생중계의 오디오 주소(HLS)와 방송 정보를 꺼낸다."""
+    if is_direct(url):
+        return get_direct_stream(url)
     # noplaylist: 재생목록 안에서 복사한 링크(&list=...)도 그 영상 하나만 연다.
     opts = {"format": "bestaudio/best", "quiet": True, "no_warnings": True, "noplaylist": True}
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -1608,13 +1653,17 @@ def run_watch(url, src, resumed=False):
                 send_telegram(hello)
             greeted = ever_greeted = True
             continuing = quiet = False
-        if not stream_meta["start"]:
+        if not stream_meta["start"] and not stream_meta.get("direct"):
             log("⚠️ 방송 시작 시각을 몰라 '방송 열기'가 실시간 화면으로 연결됩니다.")
 
+        extra = []
+        if stream_meta.get("direct"):
+            referer, _ = direct_site(url)
+            extra = ["-user_agent", BROWSER_UA] + (["-headers", f"Referer: {referer}\r\n"] if referer else [])
         proc = subprocess.Popen(
             # -rw_timeout: 정회 화면에서 송출이 멎어 응답이 끊기면 30초 뒤 빠져나와 재접속한다.
             # -nostdin·DEVNULL: 관리 프로세스의 'stop' 신호가 오는 입력을 ffmpeg 이 가로채면 안 된다.
-            ["ffmpeg", "-nostdin", "-loglevel", "error", "-rw_timeout", "30000000", "-i", stream_url,
+            ["ffmpeg", "-nostdin", "-loglevel", "error", "-rw_timeout", "30000000", *extra, "-i", stream_url,
              "-f", "s16le", "-ar", str(RATE), "-ac", "1", "-"],
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE)
         with _target_lock:
@@ -1809,7 +1858,7 @@ class Supervisor:
         stop, items, bad = parse_targets(text)
         for why, ln in bad:
             reason = ("채널 주소라서(그 채널의 다른 생중계에 붙을 수 있음) — 특정 방송 링크를 주세요"
-                      if why == "channel" else "유튜브 주소가 아니라서")
+                      if why == "channel" else "유튜브 주소나 .m3u8 스트림 주소가 아니라서")
             log(f"⚠️ 원격 지정 무시: {ln[:80]} — {reason}")
             send_slack(f"⚠️ 원격 지정의 한 줄을 무시했습니다 — {reason}.\n`{ln[:80]}`")
         if not stop and not items:
