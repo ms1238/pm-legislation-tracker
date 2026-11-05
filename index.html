@@ -190,6 +190,8 @@ section.cat{margin-bottom:44px;}
   margin-bottom:10px;
 }
 .member-name{font-size:16px;font-weight:700;}
+.member-name a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--ink-dim);}
+.member-name a:hover{border-bottom-style:solid;}
 .chip{
   font-size:11.5px;
   padding:3px 9px;
@@ -1905,5 +1907,81 @@ var PM_AMENDMENTS = [
 
   document.getElementById('bill-cards').innerHTML = PM_BILLS.map(function(b){ return card(b, false); }).join('');
   document.getElementById('bill-cards-amend').innerHTML = PM_AMENDMENTS.map(function(b){ return card(b, true); }).join('');
+})();
+
+// 의원 이름을 국회 개인 페이지로 연결한다.
+//
+// 주소는 https://www.assembly.go.kr/members/22nd/<영문이름> 꼴인데, 영문 표기가
+// 사람마다 달라서 로마자 규칙으로 만들 수 없다 — 같은 '정'씨도 정동만은 JEONG,
+// 정일영은 CHUNG 이고, 박용갑은 KAB, 복기왕은 KIWANG 이다. 그래서 ALLNAMEMBER 의
+// 영문명으로 주소를 만든 뒤 전부 눌러서 200 인 것만 아래에 넣었다
+// (automation/member_link_probe.py, 2026-11-05 확인).
+//
+// 없는 사람은 이름이 그냥 글자로 남는다. 22대 의원이 아닌 사람(재선 실패·의원직
+// 상실 9명)은 22대 페이지가 없으니 링크가 없는 게 맞다. 기관 카드도 대상이 아니다.
+// 김희정·박성민은 동명이인 행까지 훑어도 200 인 주소를 못 찾아 비워 뒀다.
+var MEMBER_LINKS = {
+  "강득구":"KANGDEUKGU",
+  "고동진":"KOHDONGJIN",
+  "김교흥":"KIMKYOHEUNG",
+  "김남근":"KIMNAMGEUN",
+  "김미애":"KIMMIAE",
+  "김상훈":"KIMSANGHOON",
+  "김성원":"KIMSUNGWON",
+  "김성회":"KIMSUNGHOI",
+  "김영배":"KIMYOUNGBAE",
+  "김은혜":"KIMEUNHYE",
+  "김정재":"KIMJUNGJAE",
+  "김종양":"KIMJONGYANG",
+  "맹성규":"MAENGSUNGKYU",
+  "문진석":"MOONJINSEOG",
+  "민홍철":"MINHONGCHUL",
+  "박상혁":"PARKSANGHYUK",
+  "박형수":"PARKHYEUNGSOO",
+  "배준영":"BAEJUNEYOUNG",
+  "복기왕":"BOKKIWANG",
+  "서범수":"SUHBUMSOO",
+  "서영교":"SEOYOUNGKYO",
+  "손명수":"SONMYOUNGSOO",
+  "송기헌":"SONGKIHUN",
+  "송석준":"SONGSEOGJUN",
+  "송언석":"SONGEONSEOG",
+  "안태준":"ANTAEJUN",
+  "엄태영":"EOMTAEYOUNG",
+  "염태영":"YEOMTAEYOUNG",
+  "유상범":"YOOSANGBUM",
+  "윤종군":"YOONJONGKUN",
+  "윤종오":"YOONJONGO",
+  "윤준병":"YOONJOONBYEONG",
+  "이만희":"LEEMANHEE",
+  "이연희":"LEEYEONHEE",
+  "이해식":"LEEHAESIK",
+  "임호선":"LIMHOSEON",
+  "장종태":"CHANGJONGTAE",
+  "전용기":"JEONYONGGI",
+  "정동만":"JEONGDONGMAN",
+  "정일영":"CHUNGILYOUNG",
+  "정점식":"JEONGJEOMSIG",
+  "정준호":"JEONGJUNHO",
+  "진성준":"JINSUNGJOON",
+  "천준호":"CHEONJUNHO",
+  "한정애":"HANJEOUNGAE",
+  "한준호":"HANJUNHO",
+  "홍기원":"HONGKEEWON",
+  "황운하":"HWANGUNHA"
+};
+
+(function linkMemberNames(){
+  var base = 'https://www.assembly.go.kr/members/22nd/';
+  Array.prototype.forEach.call(document.querySelectorAll('.member-name'), function(el){
+    // 한 카드에 여러 명이 ' · ' 로 묶인 경우가 있다(공동발의자 묶음 카드).
+    var parts = el.textContent.split(' · ');
+    if (!parts.some(function(p){ return MEMBER_LINKS[p.trim()]; })) return;
+    el.innerHTML = parts.map(function(p){
+      var name = p.trim(), slug = MEMBER_LINKS[name];
+      if (!slug) return name;
+      return '<a href="' + base + slug + '" target="_blank" rel="noopener">' + name + '</a>';
+    }).join(' · ');
+  });
 })();
 </script>
