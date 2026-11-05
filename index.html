@@ -190,8 +190,8 @@ section.cat{margin-bottom:44px;}
   margin-bottom:10px;
 }
 .member-name{font-size:16px;font-weight:700;}
-.member-name a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--ink-dim);}
-.member-name a:hover{border-bottom-style:solid;}
+.member-name a,.cname a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--ink-dim);}
+.member-name a:hover,.cname a:hover{border-bottom-style:solid;}
 .chip{
   font-size:11.5px;
   padding:3px 9px;
@@ -1919,8 +1919,13 @@ var PM_AMENDMENTS = [
 //
 // 없는 사람은 이름이 그냥 글자로 남는다. 22대 의원이 아닌 사람(재선 실패·의원직
 // 상실 9명)은 22대 페이지가 없으니 링크가 없는 게 맞다. 기관 카드도 대상이 아니다.
-// 김희정·박성민은 동명이인 행까지 훑어도 200 인 주소를 못 찾아 비워 뒀다.
+// 김희정·박성민·신성범은 동명이인 행까지 훑어도 200 인 주소를 못 찾아 비워 뒀다.
+//
+// 카드 마크업이 두 가지다 — 스탠스가 있는 의원은 .member-name, 없는 의원은
+// compact 카드의 .cname 이다. 처음에 .member-name 만 봐서 스탠스 없는 의원
+// 22명이 통째로 빠졌다. 둘 다 훑는다.
 var MEMBER_LINKS = {
+  "강대식":"KANGDAESIK",
   "강득구":"KANGDEUKGU",
   "고동진":"KOHDONGJIN",
   "김교흥":"KIMKYOHEUNG",
@@ -1934,46 +1939,57 @@ var MEMBER_LINKS = {
   "김정재":"KIMJUNGJAE",
   "김종양":"KIMJONGYANG",
   "맹성규":"MAENGSUNGKYU",
+  "모경종":"MOGYEONGJONG",
+  "문정복":"MOONJEONGBOG",
   "문진석":"MOONJINSEOG",
   "민홍철":"MINHONGCHUL",
   "박상혁":"PARKSANGHYUK",
   "박형수":"PARKHYEUNGSOO",
   "배준영":"BAEJUNEYOUNG",
   "복기왕":"BOKKIWANG",
+  "부승찬":"BOOSEUNGCHAN",
   "서범수":"SUHBUMSOO",
   "서영교":"SEOYOUNGKYO",
   "손명수":"SONMYOUNGSOO",
   "송기헌":"SONGKIHUN",
   "송석준":"SONGSEOGJUN",
   "송언석":"SONGEONSEOG",
+  "신영대":"SHINYEONGDAE",
   "안태준":"ANTAEJUN",
   "엄태영":"EOMTAEYOUNG",
   "염태영":"YEOMTAEYOUNG",
   "유상범":"YOOSANGBUM",
+  "유의동":"YUEUIDONG",
   "윤종군":"YOONJONGKUN",
   "윤종오":"YOONJONGO",
   "윤준병":"YOONJOONBYEONG",
   "이만희":"LEEMANHEE",
   "이연희":"LEEYEONHEE",
+  "이용선":"LEEYONGSUN",
   "이해식":"LEEHAESIK",
   "임호선":"LIMHOSEON",
+  "장경태":"JANGKYUNGTAE",
   "장종태":"CHANGJONGTAE",
   "전용기":"JEONYONGGI",
   "정동만":"JEONGDONGMAN",
   "정일영":"CHUNGILYOUNG",
   "정점식":"JEONGJEOMSIG",
   "정준호":"JEONGJUNHO",
+  "정희용":"JUNGHEEYONG",
+  "조인철":"CHOINCHEUL",
   "진성준":"JINSUNGJOON",
   "천준호":"CHEONJUNHO",
   "한정애":"HANJEOUNGAE",
   "한준호":"HANJUNHO",
+  "허영":"HUHYOUNG",
   "홍기원":"HONGKEEWON",
-  "황운하":"HWANGUNHA"
+  "황운하":"HWANGUNHA",
+  "황희":"HWANGHEE"
 };
 
 (function linkMemberNames(){
   var base = 'https://www.assembly.go.kr/members/22nd/';
-  Array.prototype.forEach.call(document.querySelectorAll('.member-name'), function(el){
+  Array.prototype.forEach.call(document.querySelectorAll('.member-name, .cname'), function(el){
     // 한 카드에 여러 명이 ' · ' 로 묶인 경우가 있다(공동발의자 묶음 카드).
     var parts = el.textContent.split(' · ');
     if (!parts.some(function(p){ return MEMBER_LINKS[p.trim()]; })) return;
