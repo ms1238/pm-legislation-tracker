@@ -33,15 +33,20 @@ def eng_names(key, name):
     with urllib.request.urlopen(req, timeout=20) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     rows = data.get("ALLNAMEMBER", [None, None])[1]["row"]
-    row = next((r for r in rows if "22" in (r.get("GTELT_ERACO") or "")), rows[0] if rows else None)
-    if not row:
+    if not rows:
         return None, []
-    # 영문으로 보이는 값을 가진 필드를 모은다(로마자만, 길이 4자 이상).
-    out = []
-    for k, v in row.items():
-        if isinstance(v, str) and re.fullmatch(r"[A-Za-z][A-Za-z ,.\-']{3,}", v.strip()):
-            out.append((k, v.strip()))
-    return row, out
+    # 동명이인이 있다. 22대 행을 먼저 보되 거기서 안 되면 나머지 행의 영문명도 쓴다 —
+    # 김희정·박성민이 한 행만 보고 실패했다(2026-11-05).
+    rows = sorted(rows, key=lambda r: "22" not in (r.get("GTELT_ERACO") or ""))
+    out, seen = [], set()
+    for r in rows:
+        for k, v in r.items():
+            if isinstance(v, str) and re.fullmatch(r"[A-Za-z][A-Za-z ,.\-']{3,}", v.strip()):
+                val = v.strip()
+                if val not in seen:
+                    seen.add(val)
+                    out.append((k, val))
+    return rows[0], out
 
 
 def slug(eng):
