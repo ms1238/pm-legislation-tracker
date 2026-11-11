@@ -68,6 +68,12 @@ jobs:
           LAWMAKING_OC: ${{ secrets.LAWMAKING_OC }}
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          # 못 돌았을 때 슬랙으로 알릴지. 하루 세 번 다 보내면 같은 소리가 세 번이라
+          # 첫 스케줄과 손으로 돌린 실행만 보낸다. 뒤따르는 두 번은 조용히 접는다.
+          ALERT_ON_FAILURE: ${{ github.event.schedule == '30 0 * * *' || github.event_name == 'workflow_dispatch' }}
+          # 실패 알림에 실행 로그 링크를 붙이는 데 쓴다.
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           ARGS=""
           if [ -n "${{ inputs.limit }}" ]; then ARGS="$ARGS --limit ${{ inputs.limit }}"; fi
