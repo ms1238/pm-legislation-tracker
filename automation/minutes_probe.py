@@ -10,6 +10,7 @@
   2. 추적 의안의 상정 회의(VCONFBILLCONFLIST) — 최근 회의 행의 칸 전부
   3. 그날 일정(ALLSCHEDULE) — 국토위 행의 칸 전부(안건·링크 칸이 있는지)
   4. 2번에서 본 회의의 DOWN_URL 이 실제로 PDF 를 주는지(안 올라온 회의록은 무엇을 주는지)
+  5. 회의록 감시(일일 체크와 같은 함수)를 지금 상태로 돌리면 무엇을 알리는지
 """
 import json, os, sys
 
@@ -54,7 +55,8 @@ def main():
 
     print("\n==== 2. 추적 의안의 상정 회의 ====")
     with open(os.path.join(BASE_DIR, "snapshot.json"), encoding="utf-8") as f:
-        bills = json.load(f)["bills"]
+        snapshot = json.load(f)
+    bills = snapshot["bills"]
     newest, older = None, []
     for no in ("DD20688", "2216647"):
         bill_id = (bills.get(no) or {}).get("bill_id")
@@ -94,6 +96,16 @@ def main():
                 print("  본문: %s" % blob[:400].decode("utf-8", "replace").replace("\n", " "))
         except Exception as e:
             print("  못 받았다: %r" % e)
+
+    print("\n==== 5. 회의록 감시를 지금 상태로 한 번 돌려 본다 (상태 파일·슬랙 없이) ====")
+    m.log = lambda msg: print("  [log] %s" % msg)
+    changes = m.check_bill_meetings(KEY, snapshot) + m.check_pending_minutes(snapshot)
+    print("기다리는 회의록: %s" % json.dumps(snapshot.get("pending_minutes"), ensure_ascii=False))
+    hits, newest = m.check_new_meetings(KEY, snapshot)
+    print("소위·국감 회의록 목록: 새로 읽어 걸린 것 %d건, 기억한 회의록 %d건, 최신 회의 날짜 %s"
+          % (len(hits), len(snapshot.get("seen_meeting_ids") or []), newest))
+    print("슬랙에 실릴 줄:")
+    print("\n".join(m.change_lines(changes + hits)) or "  (알릴 것 없음)")
 
     print("\nAPI 조회 상태: %s" % m.api_health()[1])
     return 0

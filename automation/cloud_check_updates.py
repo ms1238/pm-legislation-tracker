@@ -571,8 +571,41 @@ def check_member_moves(key, member_snapshot):
             info["party"] = new_party
     return changes
 
+# 회의 기록(안건 목록)은 회의 다음 날쯤 등록되지만 회의록 PDF 는 그보다 늦게 올라온다.
+# 그동안 DOWN_URL 은 PDF 대신 "내려받을 원본 회의록 파일이 등록되지 않았습니다" 안내
+# 페이지를 준다(2026-11-12, 11-11 교통법안심사소위 제1차로 확인). 그래서 등록된 회의를
+# 기억해 두고 PDF 가 올라온 실행에서 링크와 함께 다시 알린다.
+MINUTES_SEED_DAYS = 14     # 처음 켤 때 이만큼 최근 회의는 이미 '등록'으로 알렸어도 기다린다
+MINUTES_GIVE_UP_DAYS = 180
+
+
+def ymd(d):
+    d = (d or "").strip()
+    return "%s-%s-%s" % (d[:4], d[4:6], d[6:]) if len(d) == 8 and d.isdigit() else d
+
+
+def meeting_name(key, date, sess, dgr):
+    """의안별 회의 목록에는 위원회 이름이 없다. 그날 일정에서 회기·차수가 같은 회의를 찾는다.
+    하나로 좁혀지지 않으면 지어내지 않고 빈 문자열을 돌려준다."""
+    url = ("https://open.assembly.go.kr/portal/openapi/ALLSCHEDULE?KEY=%s&Type=json&pIndex=1&pSize=%d&SCH_DT=%s"
+           % (key, SCHEDULE_DAY_PAGE_SIZE, ymd(date)))
+    try:
+        rows = api_get(url)["ALLSCHEDULE"][1]["row"]
+    except Exception:
+        return ""
+    found = {("%s %s" % ((r.get("CMIT_NM") or "").strip(), (r.get("CONF_DIV") or "").strip())).strip()
+             for r in rows
+             if r.get("SCH_KIND") == "위원회" and (r.get("CMIT_NM") or "").strip() in WATCHED_SCHEDULE_COMMITTEES
+             and r.get("CONF_DGR") == dgr and (r.get("CONF_SESS") or "").startswith(sess or "?")}
+    return found.pop() if len(found) == 1 else ""
+
+
 def check_bill_meetings(key, snapshot):
     changes = []
+    first = "pending_minutes" not in snapshot
+    pending = snapshot.setdefault("pending_minutes", {})
+    recent = (now_kst() - timedelta(days=MINUTES_SEED_DAYS)).strftime("%Y%m%d")
+    names = {}
     for bill_no, info in snapshot["bills"].items():
         bill_id = info.get("bill_id")
         if not bill_id:
@@ -586,23 +619,78 @@ def check_bill_meetings(key, snapshot):
         seen = set(info.get("seen_conf_ids", []))
         for r in rows:
             conf_id = r.get("CONF_ID")
-            if conf_id and conf_id not in seen:
+            if not conf_id:
+                continue
+            date = (r.get("CONF_DT") or "").strip()
+            is_new = conf_id not in seen
+            if not is_new and not (first and date >= recent):
+                continue
+            if conf_id not in names:
+                names[conf_id] = (pending.get(conf_id) or {}).get("where") or meeting_name(key, date, r.get("SESS"), r.get("DGR"))
+            if is_new:
                 changes.append({
                     "type": "bill_new_meeting", "bill_no": bill_no, "name": info["name"],
                     "conf_id": conf_id, "conf_knd": r.get("CONF_KND"),
-                    "sess": r.get("SESS"), "dgr": r.get("DGR"), "date": (r.get("CONF_DT") or "").strip(),
+                    "sess": r.get("SESS"), "dgr": r.get("DGR"), "date": date,
+                    "down_url": r.get("DOWN_URL") or "", "where": names[conf_id],
                 })
                 seen.add(conf_id)
+            if r.get("DOWN_URL"):
+                wait = pending.setdefault(conf_id, {"down_url": r["DOWN_URL"], "sess": r.get("SESS"), "dgr": r.get("DGR"),
+                                                    "date": date, "where": names[conf_id], "bills": []})
+                if bill_no not in wait["bills"]:
+                    wait["bills"].append(bill_no)
         info["seen_conf_ids"] = sorted(seen)
     return changes
 
-def extract_pdf_text(pdf_url):
-    req = urllib.request.Request(pdf_url, headers={"User-Agent": "Mozilla/5.0"})
+
+def check_pending_minutes(snapshot):
+    """등록만 되고 PDF 가 안 올라온 회의록을 다시 열어 본다. 올라왔으면 알리고 목록에서 뺀다."""
+    changes = []
+    pending = snapshot.get("pending_minutes") or {}
+    give_up = (now_kst() - timedelta(days=MINUTES_GIVE_UP_DAYS)).strftime("%Y%m%d")
+    for conf_id, wait in sorted(pending.items()):
+        label = "%s %s %s" % (wait.get("where") or conf_id, wait.get("dgr"), ymd(wait.get("date")))
+        if (wait.get("date") or "") < give_up:
+            log("회의록을 %d일 기다렸지만 올라오지 않았다 — 그만 본다 (%s)" % (MINUTES_GIVE_UP_DAYS, label))
+            del pending[conf_id]
+            continue
+        try:
+            text = minutes_text(wait["down_url"])
+        except Exception as e:
+            # 받다가 끊긴 것은 '아직 없음'이 아니다. 남겨 두고 다음 실행에서 다시 본다.
+            log("회의록 확인 실패 (%s): %s" % (label, e))
+            continue
+        if text is None:
+            log("회의록 아직 안 올라옴 (%s)" % label)
+            continue
+        hits, speakers = pm_mentions(text)
+        changes.append({
+            "type": "minutes_published", "conf_id": conf_id, "sess": wait.get("sess"), "dgr": wait.get("dgr"),
+            "date": wait.get("date"), "where": wait.get("where") or "", "down_url": wait["down_url"],
+            "bills": wait.get("bills") or [], "hits": hits, "speakers": speakers,
+        })
+        del pending[conf_id]
+    return changes
+
+def download(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=30) as resp:
-        data = resp.read()
+        return resp.read()
+
+
+def pdf_text(data):
     import pypdf
     reader = pypdf.PdfReader(io.BytesIO(data))
     return "\n".join((p.extract_text() or "") for p in reader.pages)
+
+
+def minutes_text(url):
+    """회의록 PDF 의 글자를 돌려준다. 아직 안 올라온 회의록(PDF 가 아닌 안내 페이지)이면 None."""
+    data = download(url)
+    if data[:5] != b"%PDF-":
+        return None
+    return pdf_text(data)
 
 def find_speaker_near(text, idx):
     start = text.rfind("◯", 0, idx)
@@ -626,6 +714,19 @@ def find_speaker_near(text, idx):
         return None
     return name
 
+def pm_mentions(text):
+    """(PM 낱말이 나온 횟수, 그 근처 발언자 이름들)"""
+    hits = 0
+    speakers = set()
+    for kw in MEETING_KEYWORDS:
+        for m in re.finditer(re.escape(kw), text):
+            hits += 1
+            speaker = find_speaker_near(text, m.start())
+            if speaker:
+                speakers.add(speaker)
+    return hits, sorted(speakers)
+
+
 MEETING_ENDPOINTS = [
     ("VCONFSUBCCONFLIST", "VCONFSUBCCONFLIST", "소위", ""),
     ("VCONFAPIGCONFLIST", "VCONFAPIGCONFLIST", "국정감사", "&ERACO=" + urllib.parse.quote("제22대")),
@@ -633,6 +734,13 @@ MEETING_ENDPOINTS = [
 
 def check_new_meetings(key, snapshot):
     last_scan = snapshot.get("last_meeting_scan", "2000-01-01")
+    # 본 회의록은 번호로 기억한다. 예전에는 "마지막으로 본 회의 날짜보다 뒤"만 읽었는데,
+    # 목록은 회의 날짜순이지 올라온 순서가 아니다 — 소위 회의록은 몇 달 늦게 올라오고
+    # (2026-11-12 현재 목록의 최신이 5월 12일 회의다) 그 사이 국감 회의록이 날짜를
+    # 밀어 버리면 뒤늦게 올라온 소위 회의록은 영영 읽지 않았다. PDF 를 한 번 못 읽은
+    # 회의록도 같은 이유로 다시 보지 않았다.
+    first = "seen_meeting_ids" not in snapshot
+    seen = set(snapshot.get("seen_meeting_ids") or [])
     changes = []
     newest_date = last_scan
     for endpoint, result_key, kind_label, extra_params in MEETING_ENDPOINTS:
@@ -647,31 +755,32 @@ def check_new_meetings(key, snapshot):
             conf_dt = r.get("CONF_DT") or ""
             if conf_dt > newest_date:
                 newest_date = conf_dt
-            if conf_dt <= last_scan:
-                continue
             down_url = r.get("DOWN_URL")
+            mark = r.get("CONF_ID") or down_url
+            if not mark or mark in seen:
+                continue
+            if first and conf_dt <= last_scan:
+                seen.add(mark)   # 이 방식을 처음 켠 실행 — 예전 방식으로 이미 지나간 것들
+                continue
             if not down_url:
                 continue
             try:
-                text = extract_pdf_text(down_url)
+                text = minutes_text(down_url)
             except Exception as e:
-                log("PDF 추출 실패 (%s): %s" % (r.get("CONF_ID"), e))
+                log("PDF 추출 실패 (%s): %s — 다음 실행에서 다시 읽는다" % (r.get("CONF_ID"), e))
                 continue
-            total_hits = 0
-            speakers = set()
-            for kw in MEETING_KEYWORDS:
-                for m in re.finditer(re.escape(kw), text):
-                    total_hits += 1
-                    speaker = find_speaker_near(text, m.start())
-                    if speaker:
-                        speakers.add(speaker)
+            if text is None:
+                continue   # 목록에만 있고 파일은 아직 — 다음 실행에서 다시 본다
+            seen.add(mark)
+            total_hits, speakers = pm_mentions(text)
             if total_hits:
                 changes.append({
                     "type": "new_meeting_hit", "kind": kind_label,
                     "conf_id": r.get("CONF_ID"), "committee": r.get("CMIT_NM"),
                     "sub_committee": r.get("SB_CMIT_NM"), "date": conf_dt,
-                    "speakers": sorted(speakers),
+                    "speakers": speakers, "down_url": down_url,
                 })
+    snapshot["seen_meeting_ids"] = sorted(seen)
     return changes, newest_date
 
 def fetch_schedule_rows(key):
@@ -783,6 +892,76 @@ def send_slack(webhook_url, text):
         log("슬랙 알림 전송 실패: %s" % e)
 
 
+def change_lines(changes):
+    """변경 사항을 슬랙에 실을 줄들로 바꾼다."""
+    lines = []
+    grouped = set()
+    published = {c["conf_id"] for c in changes if c["type"] == "minutes_published"}
+    for c in changes:
+        if c["type"] == "new_bill":
+            head = "• 🆕 새 의안 발견 — [%s] %s" % (c["bill_no"], c["name"])
+            if c.get("proposer") or c.get("date"):
+                head += "\n   %s %s" % (c.get("proposer", ""), c.get("date", ""))
+            if c.get("why"):
+                head += "\n   걸린 이유: %s" % c["why"]
+            if c.get("excerpt"):
+                head += "\n   > %s" % c["excerpt"]
+            lines.append(head)
+        elif c["type"] == "stage_change":
+            lines.append("• 🔄 [%s] %s\n   %s → %s" % (c["bill_no"], c["name"], c["old_stage"], c["new_stage"]))
+        elif c["type"] == "member_seat_lost":
+            lines.append("• 🚪 %s 의원 — 의원직/소속위원회 정보 소실 (직 상실 가능성, 확인 필요)" % c["name"])
+        elif c["type"] == "member_committee_change":
+            lines.append("• 🔀 %s 의원 — 소속위원회 변경: %s → %s" % (c["name"], c["old_committee"] or "(없음)", c["new_committee"] or "(없음)"))
+        elif c["type"] == "member_party_change":
+            lines.append("• 🏳️ %s 의원 — 정당 이력 변경: `%s` → `%s`\n   (API 원본 그대로입니다. 페이지 정당 표기를 확인·정정해 주세요)" % (c["name"], c["old_party"], c["new_party"]))
+        elif c["type"] == "new_meeting_hit":
+            where = c["committee"] + (" " + c["sub_committee"] if c.get("sub_committee") else " " + c["kind"])
+            if c["speakers"]:
+                who = ", ".join(c["speakers"][:3]) + ("의원 등이" if len(c["speakers"]) > 1 else " 의원이")
+                lines.append("• 📄 [%s, %s] %sPM 관련 언급" % (where, c["date"], who + " "))
+            else:
+                lines.append("• 📄 [%s, %s] PM 관련 언급 있음(발언자 특정 안 됨)" % (where, c["date"]))
+            if c.get("down_url"):
+                lines[-1] += "\n   <%s|회의록 PDF 열기>" % c["down_url"]
+        elif c["type"] == "bill_new_meeting":
+            # 한 회의에 추적 의안이 여러 건 걸리면 의안마다 한 줄씩 나와 알림이 길어졌다
+            # (2026-11-12, 한 회의에 14줄). 회의 하나에 한 덩어리로 묶는다.
+            if c["conf_id"] in grouped:
+                continue
+            grouped.add(c["conf_id"])
+            if c["conf_id"] in published:
+                continue   # 같은 실행에서 회의록까지 올라왔으면 '회의록 공개' 쪽이 다 말한다
+            group = [x for x in changes if x["type"] == "bill_new_meeting" and x["conf_id"] == c["conf_id"]]
+            head = "• 🏛️ 회의 기록 등록 — %s (%s): 추적 의안 %d건이 안건에 올랐음" % (
+                " ".join(x for x in (c.get("where"), c["sess"], c["dgr"]) if x), ymd(c["date"]), len(group))
+            for x in group[:3]:
+                head += "\n   · [%s] %s" % (x["bill_no"], x["name"])
+            if len(group) > 3:
+                head += "\n   · 외 %d건" % (len(group) - 3)
+            head += "\n   회의록은 아직 공개 전입니다. 올라오면 링크와 함께 다시 알립니다."
+            lines.append(head)
+        elif c["type"] == "minutes_published":
+            head = "• 📄 회의록 공개 — %s (%s), 추적 의안 %d건 심사" % (
+                " ".join(x for x in (c.get("where"), c["sess"], c["dgr"]) if x), ymd(c["date"]), len(c["bills"]))
+            head += "\n   <%s|회의록 PDF 열기>" % c["down_url"]
+            if c["speakers"]:
+                head += "\n   PM 관련 발언: %s%s" % (", ".join(c["speakers"][:5]), " 등" if len(c["speakers"]) > 5 else "")
+            elif c["hits"]:
+                head += "\n   PM 관련 언급 %d회(발언자 특정 안 됨)" % c["hits"]
+            lines.append(head)
+        elif c["type"] == "new_report":
+            lines.append("• 📑 검토보고서 — [%s] %s\n   %s\n   %s"
+                         % (c["bill_no"], c["name"], c["title"][:90], c["url"]))
+        elif c["type"] == "new_schedule":
+            # PM 제정법·도로교통법 개정안을 축조심사하는 소위다. 다른 일정에 묻히지 않게 한다.
+            if c["committee"] == "국토교통위원회" and "교통법안심사소위원회" in (c["content"] or ""):
+                lines.append("• 🚨 PM 법안 심사 소위 일정 — %s, %s: %s" % (c["date"], c["committee"], c["content"]))
+            else:
+                lines.append("• 🗓️ 새 일정 — %s, %s: %s" % (c["date"], c["committee"], c["content"]))
+    return lines
+
+
 def main():
     key = os.environ.get("ASSEMBLY_API_KEY")
     webhook = os.environ.get("SLACK_WEBHOOK_URL", "")
@@ -865,6 +1044,9 @@ def main():
     log("=== 추적 의안별 신규 상정 회의 확인 ===")
     changes.extend(check_bill_meetings(key, snapshot))
 
+    log("=== 등록된 회의의 회의록 공개 확인 ===")
+    changes.extend(check_pending_minutes(snapshot))
+
     # 검토보고서 수집은 아직 켜지 않는다. 의안정보시스템이 내용을 자바스크립트로
     # 채우고, 그 데이터를 주는 주소를 아직 못 찾았다(2026-09-17 확인 경위는
     # review_watch.py 머리말에 적어 뒀다). 켜 두면 의안마다 '못 읽었다' 경고만
@@ -929,38 +1111,7 @@ def main():
         lines = ["*PM 법안 트래커 업데이트 (클라우드 루틴)* (%s)" % now_kst().strftime("%Y-%m-%d")]
         lines.append("")
         lines.append("변경 사항:")
-        for c in changes:
-            if c["type"] == "new_bill":
-                head = "• 🆕 새 의안 발견 — [%s] %s" % (c["bill_no"], c["name"])
-                if c.get("proposer") or c.get("date"):
-                    head += "\n   %s %s" % (c.get("proposer", ""), c.get("date", ""))
-                if c.get("why"):
-                    head += "\n   걸린 이유: %s" % c["why"]
-                if c.get("excerpt"):
-                    head += "\n   > %s" % c["excerpt"]
-                lines.append(head)
-            elif c["type"] == "stage_change":
-                lines.append("• 🔄 [%s] %s\n   %s → %s" % (c["bill_no"], c["name"], c["old_stage"], c["new_stage"]))
-            elif c["type"] == "member_seat_lost":
-                lines.append("• 🚪 %s 의원 — 의원직/소속위원회 정보 소실 (직 상실 가능성, 확인 필요)" % c["name"])
-            elif c["type"] == "member_committee_change":
-                lines.append("• 🔀 %s 의원 — 소속위원회 변경: %s → %s" % (c["name"], c["old_committee"] or "(없음)", c["new_committee"] or "(없음)"))
-            elif c["type"] == "member_party_change":
-                lines.append("• 🏳️ %s 의원 — 정당 이력 변경: `%s` → `%s`\n   (API 원본 그대로입니다. 페이지 정당 표기를 확인·정정해 주세요)" % (c["name"], c["old_party"], c["new_party"]))
-            elif c["type"] == "new_meeting_hit":
-                where = c["committee"] + (" " + c["sub_committee"] if c.get("sub_committee") else " " + c["kind"])
-                if c["speakers"]:
-                    who = ", ".join(c["speakers"][:3]) + ("의원 등이" if len(c["speakers"]) > 1 else " 의원이")
-                    lines.append("• 📄 [%s, %s] %sPM 관련 언급" % (where, c["date"], who + " "))
-                else:
-                    lines.append("• 📄 [%s, %s] PM 관련 언급 있음(발언자 특정 안 됨)" % (where, c["date"]))
-            elif c["type"] == "bill_new_meeting":
-                lines.append("• 🏛️ [%s] %s — 새로 상정됨 (%s %s, %s)" % (c["bill_no"], c["name"], c["sess"], c["dgr"], c["date"]))
-            elif c["type"] == "new_report":
-                lines.append("• 📑 검토보고서 — [%s] %s\n   %s\n   %s"
-                             % (c["bill_no"], c["name"], c["title"][:90], c["url"]))
-            elif c["type"] == "new_schedule":
-                lines.append("• 🗓️ 새 일정 — %s, %s: %s" % (c["date"], c["committee"], c["content"]))
+        lines.extend(change_lines(changes))
         lines.append("")
         lines.append("Claude Code에서 \"PM 트래커 업데이트 반영해줘\"라고 요청하면 위 변경사항이 페이지에 반영됩니다.")
 
