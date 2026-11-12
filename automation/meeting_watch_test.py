@@ -9,6 +9,10 @@
   2. 한 회의에 추적 의안이 여러 건 걸려도 알림은 한 덩어리다.
   3. 소위·국감 회의록 목록은 회의 날짜순이지 올라온 순서가 아니다. 날짜가 지난
      회의록이 뒤늦게 올라와도, PDF 를 한 번 못 읽어도 다음 실행에서 잡는다.
+  4. 위원회·소위 일정 API 는 회의 전에 안건(ANGUN)을 준다. 앞으로 열릴 회의의 안건에
+     추적 의안이나 PM 법안이 있으면 회의 전에 알리고, 같은 안건을 두 번 알리지 않는다.
+  5. 슬랙은 한 덩어리에 3000자까지만 받는다. 길어지면 나눠 보낸다(통째로 거절당하면
+     알림이 사라진다).
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -150,5 +154,41 @@ lines = m.change_lines([{"type": "new_schedule", "date": "2026-11-11", "committe
 print("--- 일정 ---")
 print("\n".join(lines))
 assert "PM 법안 심사 소위" in lines[0] and "PM 법안 심사 소위" not in lines[1], lines
+
+# ---- 4. 회의 전 안건 ----
+def sched_row(date, title, degree, angun):
+    return {"MEETING_DATE": date, "MEETING_TIME": "10:00", "SESS": "제439회국회(정기회)", "DEGREE": degree, "TITLE": title,
+            "COMMITTEE_NAME": "국토교통위원회", "UNIT_CD": "100022", "ANGUN": angun,
+            "LINK_URL2": "https://ltc.na.go.kr/cmmit/schl/cmitSchl/view.do?menuNo=2000048&cmtCnclDivCd=002&cmtSchSn=10121481"}
+
+AIR = "1. [2208293] 항공안전법 일부개정법률안(정일영의원 대표발의)"
+ALT = "25. 개인형 이동장치의 안전 및 관리에 관한 법률안(대안)(위원장)"            # 번호가 없는 대안 — 낱말로 잡는다
+ROAD = "31. [2216647] 도로교통법 일부개정법률안(이연희의원 대표발의)"            # 낱말은 없지만 추적 의안 번호다
+listing.update({
+    "nrsldhjpaemrmolla": [sched_row("2026-11-18", "교통법안심사소위원회", 2, "<br>".join([AIR, ALT]) + "<br>"),
+                          sched_row("2026-11-11", "교통법안심사소위원회", 1, "<br>".join([AIR, ALT, ROAD]))],   # 지난 회의
+    "nttmdfdcaakvibdar": [sched_row("2026-11-19", "전체회의", 8, AIR + "<br>")],                             # 관련 안건 없음
+})
+ag = {"bills": {"2216647": {"name": "도로교통법 일부개정법률안"}, "DD20688": {"name": "대안"}}}
+ch = m.check_agendas("KEY", ag)
+print("--- 회의 전 안건 ---")
+block = "\n".join(m.change_lines(ch))
+print(block)
+assert len(ch) == 1 and ch[0]["type"] == "agenda_hit" and ch[0]["date"] == "2026-11-18" and ch[0]["items"] == [ALT], ch
+assert "안건 예고" in block and "교통법안심사소위원회" in block and "<https://ltc.na.go.kr/" in block, block
+assert m.check_agendas("KEY", ag) == []                              # 같은 안건을 두 번 알리지 않는다
+listing["nrsldhjpaemrmolla"][0]["ANGUN"] += ROAD                     # 안건이 추가됐다
+ch = m.check_agendas("KEY", ag)
+assert len(ch) == 1 and ch[0]["items"] == [ALT, ROAD] and ch[0]["new_items"] == [ROAD], ch
+assert m.check_agendas("KEY", ag) == []
+
+# ---- 5. 긴 알림은 나눠 보낸다 ----
+long_text = "\n".join("• 줄 %03d %s" % (i, "가" * 60) for i in range(120))
+blocks = m.text_blocks(long_text)
+print("--- 긴 알림 ---")
+print("  %d자 → %d덩어리 (가장 긴 것 %d자)" % (len(long_text), len(blocks), max(len(b["text"]["text"]) for b in blocks)))
+assert len(blocks) > 1 and all(0 < len(b["text"]["text"]) <= 3000 for b in blocks), blocks
+assert "\n".join(b["text"]["text"] for b in blocks) == long_text       # 잃어버리는 줄이 없다
+assert len(m.text_blocks("짧은 알림")) == 1
 
 print("\n전부 통과")
