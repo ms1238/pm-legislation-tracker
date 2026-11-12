@@ -91,6 +91,19 @@ def main():
                         show_page(v)
             break
 
+    print("\n==== 안건 감시(일일 체크와 같은 함수)를 돌려 본다 — 상태 파일·슬랙 없이 ====")
+    with open(os.path.join(BASE_DIR, "snapshot.json"), encoding="utf-8") as f:
+        snapshot = json.load(f)
+    real_now = m.now_kst
+    y, mo, d = (int(x) for x in day.split("-"))
+    for label, clock in (("지금 기준", real_now), ("%s 아침이었다면" % day, lambda: m.datetime(y, mo, d, 8, 0, tzinfo=m.KST))):
+        m.now_kst = clock
+        snap = dict(snapshot, seen_agenda={})
+        changes = m.check_agendas(KEY, snap)
+        print("[%s] 알릴 회의 %d건" % (label, len(changes)))
+        print("\n".join(m.change_lines(changes)) or "  (없음)")
+    m.now_kst = real_now
+
     print("\nAPI 조회 상태: %s" % m.api_health()[1])
     return 0
 

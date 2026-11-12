@@ -12,7 +12,7 @@ PM(개인형 이동수단) 법안 트래커 - 클라우드(Anthropic Routine)용
   - 이 스크립트는 페이지(index.html) 내용을 직접 수정하지 않는다 — 감지+알림+상태갱신까지만.
     실제 편집은 여전히 사람이 "PM 트래커 업데이트 반영해줘"라고 요청했을 때 처리한다.
 """
-import json, os, sys, re, io, time, urllib.request, urllib.parse
+import html, json, os, sys, re, io, time, urllib.request, urllib.parse
 from datetime import datetime, timedelta, timezone
 
 # 이 트래커가 다루는 시간은 전부 한국 국회 일정이라 KST가 기준이다.
@@ -866,14 +866,75 @@ def check_schedule(key, snapshot):
         % (len(rows), len(relevant), len(new_items), len(today_items)))
     return new_items, today_items
 
+# 위원회·소위 일정 API 는 회의 이름만 주는 ALLSCHEDULE 과 달리 안건(ANGUN)과 위원회
+# 홈페이지의 회의 안내 주소(의사일정 파일이 붙어 있다)를 준다. 2026-11-11 교통법안심사소위
+# 제1차는 일정만 닷새 전에 알리고, PM 법안 14건이 올라간다는 말은 회의 다음 날에야 했다.
+AGENDA_ENDPOINTS = [("nrsldhjpaemrmolla", "소위"), ("nttmdfdcaakvibdar", "전체회의")]
+AGENDA_UNIT_CD = "100022"   # 제22대
+
+
+def pm_agenda_items(angun, bill_nos):
+    """안건 목록에서 추적 의안(번호)이나 PM 법안(낱말)인 줄만 고른다. 대안은 번호 없이 올라온다."""
+    out = []
+    for item in re.split(r"<br\s*/?>", html.unescape(angun or "")):
+        item = item.strip()
+        if item and (any(no in bill_nos for no in re.findall(r"\[(\d+)\]", item))
+                     or any(kw in item for kw in MEETING_KEYWORDS)):
+            out.append(item)
+    return out
+
+
+def check_agendas(key, snapshot):
+    """앞으로 열릴 회의의 안건에 추적 의안이나 PM 법안이 있으면 알린다. 안건이 늘면 다시 알린다."""
+    today = now_kst().strftime("%Y-%m-%d")
+    seen = snapshot.get("seen_agenda") or {}
+    bill_nos = set(snapshot["bills"])
+    changes = []
+    for endpoint, kind in AGENDA_ENDPOINTS:
+        url = ("https://open.assembly.go.kr/portal/openapi/%s?KEY=%s&Type=json&pIndex=1&pSize=100&UNIT_CD=%s"
+               % (endpoint, key, AGENDA_UNIT_CD))
+        try:
+            rows = api_get(url)[endpoint][1]["row"]
+        except Exception as e:
+            log("안건 조회 실패 (%s): %s" % (kind, e))
+            continue
+        for r in rows:
+            date = (r.get("MEETING_DATE") or "").strip()
+            if date < today:
+                continue
+            items = pm_agenda_items(r.get("ANGUN"), bill_nos)
+            mark = "%s|%s|%s|%s" % (date, r.get("COMMITTEE_NAME"), r.get("TITLE"), r.get("DEGREE"))
+            new_items = [x for x in items if x not in seen.get(mark, [])]
+            if not new_items:
+                continue
+            changes.append({
+                "type": "agenda_hit", "date": date, "time": r.get("MEETING_TIME"), "committee": r.get("COMMITTEE_NAME"),
+                "title": r.get("TITLE"), "sess": r.get("SESS"), "degree": r.get("DEGREE"),
+                "items": items, "new_items": new_items, "link": r.get("LINK_URL2") or "",
+            })
+            seen[mark] = seen.get(mark, []) + new_items
+    snapshot["seen_agenda"] = {k: v for k, v in seen.items() if k.split("|", 1)[0] >= today}
+    return changes
+
+
+def text_blocks(text, limit=2900):
+    """슬랙은 section 하나에 3000자까지만 받고, 넘으면 메시지를 통째로 거절한다. 줄 단위로 나눈다."""
+    chunks = []
+    for line in text.split("\n"):
+        if chunks and len(chunks[-1]) + 1 + len(line) <= limit:
+            chunks[-1] += "\n" + line
+        else:
+            chunks.append(line[:limit])
+    return [{"type": "section", "text": {"type": "mrkdwn", "text": c}} for c in chunks]
+
+
 def send_slack(webhook_url, text):
     if not webhook_url:
         log("SLACK_WEBHOOK_URL 환경변수 없음 - 알림 전송 생략")
         return
     payload = {
         "text": text,
-        "blocks": [
-            {"type": "section", "text": {"type": "mrkdwn", "text": text}},
+        "blocks": text_blocks(text) + [
             {"type": "actions", "elements": [
                 # 공개 페이지를 주 링크로 둔다 — master에 머지되면 자동 배포되므로
                 # 항상 최신이다. 아티팩트는 재발행과 공유 핀 이동을 사람이 해야 해서
@@ -953,6 +1014,16 @@ def change_lines(changes):
         elif c["type"] == "new_report":
             lines.append("• 📑 검토보고서 — [%s] %s\n   %s\n   %s"
                          % (c["bill_no"], c["name"], c["title"][:90], c["url"]))
+        elif c["type"] == "agenda_hit":
+            head = "• 🚨 안건 예고 — %s %s, %s %s(제%s차): 추적·PM 안건 %d건" % (
+                c["date"], c["time"] or "", c["committee"], c["title"], c["degree"], len(c["items"]))
+            for x in c["items"][:5]:
+                head += "\n   · %s" % x[:100]
+            if len(c["items"]) > 5:
+                head += "\n   · 외 %d건" % (len(c["items"]) - 5)
+            if c["link"]:
+                head += "\n   <%s|회의 안내·의사일정 파일 보기>" % c["link"]
+            lines.append(head)
         elif c["type"] == "new_schedule":
             # PM 제정법·도로교통법 개정안을 축조심사하는 소위다. 다른 일정에 묻히지 않게 한다.
             if c["committee"] == "국토교통위원회" and "교통법안심사소위원회" in (c["content"] or ""):
@@ -1068,6 +1139,9 @@ def main():
               % (report_checked, len(report_changes), len(report_unread)))
       except Exception as e:
           log("검토보고서 확인 실패(%s) — 이번 실행은 건너뛴다" % e)
+
+    log("=== 위원회·소위 안건 확인 ===")
+    changes.extend(check_agendas(key, snapshot))
 
     log("=== 국토위/행안위/법사위/본회의 일정 확인 ===")
     new_schedule_items, today_schedule_items = check_schedule(key, snapshot)
