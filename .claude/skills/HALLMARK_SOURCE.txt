@@ -1,0 +1,1 @@
+hallmark: copied from https://github.com/Nutlope/hallmark @ 04977e1 (MIT). Skill folder only; the edit-time lint hook (scripts/install-hook.mjs) is not installed.
