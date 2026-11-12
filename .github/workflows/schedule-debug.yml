@@ -58,7 +58,9 @@ jobs:
           PYTHONUNBUFFERED: "1"
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
           PROBE_DAY: ${{ inputs.seq }}
-        run: python automation/minutes_probe.py "$PROBE_DAY"
+        run: |
+          pip install --quiet -r automation/requirements.txt
+          python automation/minutes_probe.py "$PROBE_DAY"
 
       - name: 의원 홈페이지 주소 찾기
         if: ${{ inputs.mode == 'memberlink' }}
