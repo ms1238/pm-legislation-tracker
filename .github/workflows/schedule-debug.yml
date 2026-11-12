@@ -22,6 +22,7 @@ on:
           - browser       # 브라우저로 띄워 JS 가 부르는 주소를 관찰(진단 전용)
           - memberlink    # 의원 카드에 걸 국회 홈페이지 주소 찾기(눌러서 200 확인)
           - ordin         # 자치법규(지방) 입법예고 API가 있는지 알아본다
+          - minutes       # 회의록·상정·일정 API가 주는 칸 확인(seq 에 날짜를 넣으면 그날 일정)
       seq:
         description: "inspect 일 때 열어볼 입법예고 번호(ogLmPpSeq)"
         required: false
@@ -50,6 +51,16 @@ jobs:
           PYTHONUNBUFFERED: "1"
           ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
         run: python automation/schedule_debug.py
+
+      - name: 회의록·상정·일정 API 칸 확인
+        if: ${{ inputs.mode == 'minutes' }}
+        env:
+          PYTHONUNBUFFERED: "1"
+          ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
+          PROBE_DAY: ${{ inputs.seq }}
+        run: |
+          pip install --quiet -r automation/requirements.txt
+          python automation/minutes_probe.py "$PROBE_DAY"
 
       - name: 의원 홈페이지 주소 찾기
         if: ${{ inputs.mode == 'memberlink' }}
