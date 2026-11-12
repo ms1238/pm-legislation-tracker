@@ -9,7 +9,7 @@
   1. 소위 회의록 목록(VCONFSUBCCONFLIST) — 행에 어떤 칸이 있는지(링크 칸), 날짜순으로 오는지
   2. 추적 의안의 상정 회의(VCONFBILLCONFLIST) — 최근 회의 행의 칸 전부
   3. 그날 일정(ALLSCHEDULE) — 국토위 행의 칸 전부(안건·링크 칸이 있는지)
-  4. 2번에서 본 가장 최근 회의의 DOWN_URL 이 실제 회의록 PDF 인지(쪽수·첫머리·PM 낱말 수)
+  4. 2번에서 본 회의의 DOWN_URL 이 실제로 PDF 를 주는지(안 올라온 회의록은 무엇을 주는지)
 """
 import json, os, sys
 
@@ -55,7 +55,7 @@ def main():
     print("\n==== 2. 추적 의안의 상정 회의 ====")
     with open(os.path.join(BASE_DIR, "snapshot.json"), encoding="utf-8") as f:
         bills = json.load(f)["bills"]
-    newest = None
+    newest, older = None, []
     for no in ("DD20688", "2216647"):
         bill_id = (bills.get(no) or {}).get("bill_id")
         if not bill_id:
@@ -66,8 +66,10 @@ def main():
         for r in sorted(rows, key=lambda r: (r.get("CONF_DT") or ""), reverse=True)[:2]:
             dump(r)
             print("    --")
-            if r.get("DOWN_URL") and (newest is None or (r.get("CONF_DT") or "") > (newest.get("CONF_DT") or "")):
-                newest = r
+            if r.get("DOWN_URL"):
+                older.append(r)
+                if newest is None or (r.get("CONF_DT") or "") > (newest.get("CONF_DT") or ""):
+                    newest = r
 
     print("\n==== 3. %s 일정 중 국토교통위원회 ====" % day)
     total, rows = rows_of("ALLSCHEDULE", 100, "&SCH_DT=%s" % day)
@@ -77,16 +79,21 @@ def main():
             dump(r)
             print("    --")
 
-    print("\n==== 4. 가장 최근 회의의 회의록 PDF ====")
-    if newest:
-        print("%s %s %s — %s" % (newest.get("SESS"), newest.get("DGR"), (newest.get("CONF_DT") or "").strip(), newest["DOWN_URL"]))
+    print("\n==== 4. 회의록 주소가 실제로 주는 것 (최근 회의 / 이전 회의) ====")
+    import urllib.request
+    for r in [newest] + [x for x in older if x is not newest][:1]:
+        if not r:
+            continue
+        print("%s %s %s — %s" % (r.get("SESS"), r.get("DGR"), (r.get("CONF_DT") or "").strip(), r["DOWN_URL"]))
         try:
-            text = m.extract_pdf_text(newest["DOWN_URL"])
-            print("글자 %d자, PM 낱말: %s" % (len(text), {kw: text.count(kw) for kw in m.MEETING_KEYWORDS if kw in text}))
-            print("첫머리:")
-            print("    " + " / ".join(l.strip() for l in text[:900].splitlines() if l.strip())[:700])
+            req = urllib.request.Request(r["DOWN_URL"], headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                ctype, blob = resp.headers.get("Content-Type"), resp.read()
+            print("  Content-Type %s, %d바이트, PDF 인가: %s" % (ctype, len(blob), blob[:5] == b"%PDF-"))
+            if blob[:5] != b"%PDF-":
+                print("  본문: %s" % blob[:400].decode("utf-8", "replace").replace("\n", " "))
         except Exception as e:
-            print("PDF 를 못 읽었다: %r" % e)
+            print("  못 받았다: %r" % e)
 
     print("\nAPI 조회 상태: %s" % m.api_health()[1])
     return 0
