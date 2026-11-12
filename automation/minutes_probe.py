@@ -81,7 +81,7 @@ def main():
 
     print("\n==== 4. 회의록 주소가 실제로 주는 것 (최근 회의 / 이전 회의) ====")
     import urllib.request
-    for r in [newest] + [x for x in older if x is not newest][:1]:
+    for r in [newest] + [x for x in older if newest and x.get("CONF_ID") != newest.get("CONF_ID")][:1]:
         if not r:
             continue
         print("%s %s %s — %s" % (r.get("SESS"), r.get("DGR"), (r.get("CONF_DT") or "").strip(), r["DOWN_URL"]))
