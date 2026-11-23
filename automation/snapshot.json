@@ -692,19 +692,6 @@
     "N054767",
     "N054822"
   ],
-  "pending_minutes": {
-    "N054820": {
-      "down_url": "https://record.assembly.go.kr/assembly/viewer/minutes/download/pdf.do?id=57778",
-      "sess": "제439회",
-      "dgr": "제11차",
-      "date": "20261116",
-      "where": "행정안전위원회 전체회의",
-      "bills": [
-        "2219322",
-        "2219714",
-        "2220424"
-      ]
-    }
-  },
+  "pending_minutes": {},
   "seen_agenda": {}
 }
